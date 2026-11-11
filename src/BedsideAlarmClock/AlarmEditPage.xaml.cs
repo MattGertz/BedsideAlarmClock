@@ -7,7 +7,7 @@ namespace BedsideAlarmClock;
 
 public partial class AlarmEditPage : ContentPage
 {
-    private readonly AlarmRepository _repository;
+    private readonly AlarmCoordinator _coordinator;
     private readonly AlarmDefinition _original;
     private readonly bool _isNew;
     private readonly Button[] _dayButtons = new Button[7];
@@ -20,7 +20,7 @@ public partial class AlarmEditPage : ContentPage
     public AlarmEditPage(AlarmDefinition? alarm)
     {
         InitializeComponent();
-        _repository = IPlatformApplication.Current!.Services.GetRequiredService<AlarmRepository>();
+        _coordinator = IPlatformApplication.Current!.Services.GetRequiredService<AlarmCoordinator>();
         _isNew = alarm is null;
         var initialTime = DateTime.Now.AddMinutes(1);
         _original = alarm is null
@@ -175,23 +175,19 @@ public partial class AlarmEditPage : ContentPage
                     : _original.OnceDate;
             updated.SkipDate = changedSchedule || !_isRepeating ? null : _original.SkipDate;
 
-            var alarms = (await _repository.LoadAsync()).ToList();
             if (_isNew)
             {
-                alarms.Add(updated);
+                await _coordinator.AddAsync(updated);
             }
             else
             {
-                var index = alarms.FindIndex(a => a.Id == updated.Id);
-                if (index < 0)
-                {
-                    await DisplayAlertAsync("Alarm not found", "This alarm no longer exists. No changes were saved.", "OK");
-                    return;
-                }
-                alarms[index] = updated;
+                await _coordinator.ReplaceAsync(_original, updated);
             }
-            await _repository.SaveAsync(alarms);
             await Navigation.PopAsync();
+        }
+        catch (AlarmConflictException ex)
+        {
+            await DisplayAlertAsync("Alarm changed", ex.Message, "OK");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
@@ -212,9 +208,12 @@ public partial class AlarmEditPage : ContentPage
         try
         {
             if (!await DisplayAlertAsync("Delete alarm?", "This alarm will be removed.", "Delete", "Cancel")) return;
-            var alarms = (await _repository.LoadAsync()).Where(a => a.Id != _original.Id).ToArray();
-            await _repository.SaveAsync(alarms);
+            await _coordinator.DeleteAsync(_original);
             await Navigation.PopAsync();
+        }
+        catch (AlarmConflictException ex)
+        {
+            await DisplayAlertAsync("Alarm changed", ex.Message, "OK");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {

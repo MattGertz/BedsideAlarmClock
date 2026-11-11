@@ -19,7 +19,11 @@ public sealed class AlarmRepository
         this.path = Path.GetFullPath(path);
     }
 
-    public async Task<IReadOnlyList<AlarmDefinition>> LoadAsync()
+    public Task<IReadOnlyList<AlarmDefinition>> LoadAsync() => LoadAsync(allowMissing: true);
+
+    internal Task<IReadOnlyList<AlarmDefinition>> LoadExistingAsync() => LoadAsync(allowMissing: false);
+
+    private async Task<IReadOnlyList<AlarmDefinition>> LoadAsync(bool allowMissing)
     {
         FileStream stream;
         try
@@ -27,7 +31,7 @@ public sealed class AlarmRepository
             stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
                 4096, FileOptions.Asynchronous);
         }
-        catch (FileNotFoundException)
+        catch (FileNotFoundException) when (allowMissing)
         {
             return Array.Empty<AlarmDefinition>();
         }
@@ -47,34 +51,11 @@ public sealed class AlarmRepository
     {
         ArgumentNullException.ThrowIfNull(alarms);
         ValidateAlarms(alarms);
-        var directory = Path.GetDirectoryName(path)!;
-        Directory.CreateDirectory(directory);
-        var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        var temporaryCreated = false;
-        try
+        await AtomicJsonFile.WriteAsync(path, new AlarmDocument
         {
-            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write,
-                FileShare.None, 4096, FileOptions.Asynchronous))
-            {
-                temporaryCreated = true;
-                await JsonSerializer.SerializeAsync(stream, new AlarmDocument
-                {
-                    Version = CurrentVersion,
-                    Alarms = alarms
-                }, JsonOptions);
-                await stream.FlushAsync();
-                await Task.Run(() => stream.Flush(flushToDisk: true));
-            }
-            File.Move(temporaryPath, path, overwrite: true);
-            temporaryCreated = false;
-        }
-        finally
-        {
-            if (temporaryCreated)
-            {
-                File.Delete(temporaryPath);
-            }
-        }
+            Version = CurrentVersion,
+            Alarms = alarms
+        }, JsonOptions);
     }
 
     private static void ValidateAlarms(IReadOnlyList<AlarmDefinition>? alarms)

@@ -5,7 +5,7 @@ namespace BedsideAlarmClock;
 
 public partial class AlarmListPage : ContentPage
 {
-    private readonly AlarmRepository _repository;
+    private readonly AlarmCoordinator _coordinator;
     private readonly IDispatcherTimer _statusTimer;
     private IReadOnlyList<AlarmDefinition> _alarms = [];
     private (DateOnly Date, string Status) _displayState;
@@ -15,7 +15,7 @@ public partial class AlarmListPage : ContentPage
     public AlarmListPage()
     {
         InitializeComponent();
-        _repository = IPlatformApplication.Current!.Services.GetRequiredService<AlarmRepository>();
+        _coordinator = IPlatformApplication.Current!.Services.GetRequiredService<AlarmCoordinator>();
         _statusTimer = Dispatcher.CreateTimer();
         _statusTimer.Interval = TimeSpan.FromSeconds(15);
         _statusTimer.IsRepeating = true;
@@ -45,7 +45,7 @@ public partial class AlarmListPage : ContentPage
         SetBusy(true);
         try
         {
-            _alarms = await _repository.LoadAsync();
+            _alarms = await _coordinator.LoadAsync();
             _loaded = true;
             Render();
         }
@@ -177,7 +177,7 @@ public partial class AlarmListPage : ContentPage
         {
             updated.OnceDate = AlarmPresentation.NextOnceDate(updated.Hour, updated.Minute);
         }
-        await ReplaceAsync(updated);
+        await ReplaceAsync(alarm, updated);
     }
 
     private async Task SetSkipAsync(AlarmDefinition alarm, bool undoSkip)
@@ -196,17 +196,21 @@ public partial class AlarmListPage : ContentPage
                 return;
             }
         }
-        await ReplaceAsync(updated);
+        await ReplaceAsync(alarm, updated);
     }
 
-    private async Task ReplaceAsync(AlarmDefinition updated)
+    private async Task ReplaceAsync(AlarmDefinition original, AlarmDefinition updated)
     {
         SetBusy(true);
+        var reload = false;
         try
         {
-            var next = _alarms.Select(a => a.Id == updated.Id ? updated : a).ToArray();
-            await _repository.SaveAsync(next);
-            _alarms = next;
+            _alarms = await _coordinator.ReplaceAsync(original, updated);
+        }
+        catch (AlarmConflictException ex)
+        {
+            reload = true;
+            await DisplayAlertAsync("Alarm changed", ex.Message, "OK");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
@@ -217,6 +221,7 @@ public partial class AlarmListPage : ContentPage
             Render();
             SetBusy(false);
         }
+        if (reload) await LoadAsync();
     }
 
     private async Task OpenEditorAsync(AlarmDefinition? alarm)

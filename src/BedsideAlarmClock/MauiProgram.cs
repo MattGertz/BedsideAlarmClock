@@ -19,6 +19,7 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ClockBrightness>();
 		builder.Services.AddSingleton<IClockBrightness>(services => services.GetRequiredService<ClockBrightness>());
 		builder.Services.AddSingleton(_ => new AlarmRepository(Path.Combine(FileSystem.AppDataDirectory, "alarms.json")));
+		builder.Services.AddSingleton<AlarmCoordinator>();
 
 #if DEBUG
 		builder.Logging.AddDebug();

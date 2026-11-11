@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BedsideAlarmClock.AndroidSchedulerProbe</RootNamespace>
+    <ApplicationId>com.example.bedsidealarmschedulerprobe</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AndroidManifest Condition="'$(ProbeExactPermission)' == 'schedule'">Properties\DeniedManifest.xml</AndroidManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\BedsideAlarmClock\Platforms\Android\AndroidAlarmScheduler.cs" Link="AndroidAlarmScheduler.cs" />
+    <Compile Include="..\..\src\BedsideAlarmClock\Alarms\AlarmRegistration.cs" Link="AlarmRegistration.cs" />
+  </ItemGroup>
+</Project>
