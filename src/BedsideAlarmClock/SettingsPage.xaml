@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BedsideAlarmClock.SettingsPage"
+             Title="Settings"
+             BackgroundColor="#000000">
+    <VerticalStackLayout Padding="24,16"
+                         Spacing="20">
+        <Grid ColumnDefinitions="*,Auto"
+              ColumnSpacing="16">
+            <VerticalStackLayout Spacing="4"
+                                 VerticalOptions="Center">
+                <Label Text="24-hour time"
+                       FontSize="18"
+                       TextColor="#D8D8D8" />
+                <Label Text="Use a 24-hour clock instead of AM/PM"
+                       FontSize="14"
+                       TextColor="#858585" />
+            </VerticalStackLayout>
+            <Switch x:Name="Use24HourTimeSwitch"
+                    Grid.Column="1"
+                    VerticalOptions="Center"
+                    SemanticProperties.Description="Use 24-hour time" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto"
+              ColumnSpacing="16">
+            <VerticalStackLayout Spacing="4"
+                                 VerticalOptions="Center">
+                <Label Text="Show seconds"
+                       FontSize="18"
+                       TextColor="#D8D8D8" />
+                <Label Text="Update the clock every second"
+                       FontSize="14"
+                       TextColor="#858585" />
+            </VerticalStackLayout>
+            <Switch x:Name="ShowSecondsSwitch"
+                    Grid.Column="1"
+                    VerticalOptions="Center"
+                    SemanticProperties.Description="Show seconds on the clock" />
+        </Grid>
+    </VerticalStackLayout>
+</ContentPage>
