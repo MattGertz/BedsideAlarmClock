@@ -160,8 +160,19 @@ Phase 1 will target `net10.0-android` only. Windows compilation is intentionally
 ## Phase 1 implementation status
 
 - Created `BedsideAlarmClock.slnx` and an Android-only MAUI app targeting `net10.0-android`.
-- Replaced the template landing screen with a black, centered clock displaying subdued time and the localized weekday/date. Added persisted 12/24-hour and seconds settings, both defaulting to on.
+- Replaced the template landing screen with a black, centered clock displaying subdued time and the localized weekday/date. Added persisted 12/24-hour, seconds, and date settings, defaulting to on, and a clock-font choice of sans serif, serif, or monospace (sans serif by default).
 - The clock uses a repeating one-second UI timer while visible, reads the current local time on each tick, and only updates displayed text when it changes. It refreshes immediately when the page appears and stops when the page is no longer visible.
-- Android keeps the display awake only while the app activity is resumed. The activity hides system bars with transient swipe reveal on Android 11+ and uses immersive sticky flags on older supported versions.
+- The clock measures `10:00:00 AM` using the Android text rendering font and reduces the time font size as needed when the available width changes, reserving 48 physical pixels on each side for pixel shifting.
+- Android keeps the display awake only while the clock page is active in the resumed activity. The activity hides system bars with transient swipe reveal on Android 11+ and uses immersive sticky flags on older supported versions.
 - Removed unused template network permissions and added a root `.gitignore` for .NET, IDE, test, and Android signing artifacts.
 - Verified a successful Android solution build with `dotnet build BedsideAlarmClock.slnx --no-restore`. No emulator or device was connected during this phase, so visual and lifecycle testing remains necessary.
+
+## Phase 2 display status
+
+- Brightness is adjusted by vertical swipe using the current Android window and a fixed range. The user verified the range, both swipe directions and orientations, and persistence across sessions on the S25 Ultra.
+- The clock and date move together in a deterministic sequence every two minutes. The shift is 48 physical pixels from center in each direction, per user preference; 48 pixels of travel space are reserved around the content. The user verified shifting with a temporary 15-second interval on the S25 Ultra, and the interval was restored to two minutes.
+- The clock's serif and monospace options use bundled Noto Serif and Noto Sans Mono fonts to avoid device-specific system font mappings. The fonts are distributed under the SIL Open Font License, included alongside the font files.
+- Pixel shifting reduces static exposure but cannot guarantee prevention of OLED burn-in. No additional dimming overlay is implemented.
+- The user verified that brightness returns to normal outside the clock and that the minimum is satisfactory in a dark room.
+- Notifications and other activities may temporarily cover or pause the clock; returning refreshes the time and restores clock-only brightness and keep-awake behavior. The clock does not automatically reopen after a device reboot or update. Alarm scheduling and reboot recovery are future phases and are not yet implemented.
+- On an isolated emulator, the notification shade and a separate Settings activity were opened and dismissed; after return, the clock advanced, its window brightness and keep-awake flag were restored, and a subsequent two-minute pixel shift moved 48 physical pixels. Real phone calls, overnight operation, and reboot recovery have not been verified by this test.

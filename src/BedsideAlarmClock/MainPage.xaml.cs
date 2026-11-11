@@ -1,8 +1,14 @@
+using BedsideAlarmClock.Display;
+using BedsideAlarmClock.Platforms.Android;
+
 namespace BedsideAlarmClock;
 
 public partial class MainPage : ContentPage
 {
     private readonly IDispatcherTimer _clockTimer;
+    private readonly IDispatcherTimer _pixelShiftTimer;
+    private readonly IClockBrightness _brightness;
+    private int _pixelShiftPosition;
     private string? _lastTimeText;
     private string? _lastDateText;
     private string? _lastTimeDescription;
@@ -11,24 +17,47 @@ public partial class MainPage : ContentPage
     {
         InitializeComponent();
 
+        _brightness = IPlatformApplication.Current!.Services.GetRequiredService<IClockBrightness>();
         _clockTimer = Dispatcher.CreateTimer();
         _clockTimer.Interval = TimeSpan.FromSeconds(1);
         _clockTimer.IsRepeating = true;
         _clockTimer.Tick += OnClockTimerTick;
+
+        _pixelShiftTimer = Dispatcher.CreateTimer();
+        _pixelShiftTimer.Interval = TimeSpan.FromMinutes(2);
+        _pixelShiftTimer.IsRepeating = true;
+        _pixelShiftTimer.Tick += OnPixelShiftTimerTick;
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
-        // Refresh immediately in case the app was backgrounded across a minute change.
-        RefreshClock();
-        _clockTimer.Start();
+        ResumeClock();
     }
 
     protected override void OnDisappearing()
     {
-        _clockTimer.Stop();
+        PauseClock();
         base.OnDisappearing();
+    }
+
+    public void ResumeClock()
+    {
+        var font = Preferences.Default.Get(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[0]);
+        TimeLabel.FontFamily = ClockSettings.FontFamily(font);
+        DateLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowDateKey, true);
+        UpdateClockFontSize();
+        RefreshClock();
+        _clockTimer.Start();
+        _brightness.Activate();
+        _pixelShiftTimer.Start();
+    }
+
+    public void PauseClock()
+    {
+        _clockTimer.Stop();
+        _pixelShiftTimer.Stop();
+        _brightness.Deactivate();
     }
 
     public void RefreshClock()
@@ -46,7 +75,9 @@ public partial class MainPage : ContentPage
 
         var timeText = now.ToString(timeFormat);
         var dateText = now.ToString("dddd, MMMM d");
-        var timeDescription = now.ToString("dddd, MMMM d, " + timeFormat);
+        var timeDescription = DateLabel.IsVisible
+            ? now.ToString("dddd, MMMM d, " + timeFormat)
+            : timeText;
 
         if (_lastTimeText != timeText)
         {
@@ -70,6 +101,38 @@ public partial class MainPage : ContentPage
     private void OnClockTimerTick(object? sender, EventArgs e)
     {
         RefreshClock();
+    }
+
+    private void OnClockLayoutSizeChanged(object? sender, EventArgs e)
+    {
+        var margin = DisplayMath.PixelShiftDistance / DeviceDisplay.MainDisplayInfo.Density;
+        ClockSafeArea.Padding = new Thickness(margin);
+        UpdateClockFontSize();
+    }
+
+    private void OnClockSafeAreaSizeChanged(object? sender, EventArgs e)
+    {
+        UpdateClockFontSize();
+    }
+
+    private void OnTimeLabelHandlerChanged(object? sender, EventArgs e)
+    {
+        UpdateClockFontSize();
+    }
+
+    private void UpdateClockFontSize()
+    {
+        var padding = ClockSafeArea.Padding;
+        ClockTextSizer.Fit(TimeLabel, ClockSafeArea.Width - padding.Left - padding.Right);
+    }
+
+    private void OnPixelShiftTimerTick(object? sender, EventArgs e)
+    {
+        _pixelShiftPosition = (_pixelShiftPosition + 1) % 9;
+        var (x, y) = DisplayMath.PixelOffset(_pixelShiftPosition);
+        var density = DeviceDisplay.MainDisplayInfo.Density;
+        ClockContent.TranslationX = x / density;
+        ClockContent.TranslationY = y / density;
     }
 
     private async void OnSettingsClicked(object? sender, EventArgs e)

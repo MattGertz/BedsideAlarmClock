@@ -4,23 +4,30 @@
              x:Class="BedsideAlarmClock.MainPage"
              Shell.NavBarIsVisible="False"
              BackgroundColor="#000000">
-    <Grid Padding="20">
-        <VerticalStackLayout HorizontalOptions="Center"
-                             VerticalOptions="Center"
-                             Spacing="12">
-            <Label x:Name="TimeLabel"
-                   HorizontalOptions="Center"
-                   FontSize="96"
-                   FontAttributes="Bold"
-                   TextColor="#D8D8D8"
-                   LineBreakMode="NoWrap"
-                   SemanticProperties.HeadingLevel="Level1" />
-            <Label x:Name="DateLabel"
-                   HorizontalOptions="Center"
-                   FontSize="18"
-                   TextColor="#858585"
-                   SemanticProperties.HeadingLevel="Level2" />
-        </VerticalStackLayout>
+    <Grid x:Name="ClockLayout"
+          Padding="20"
+          SizeChanged="OnClockLayoutSizeChanged">
+        <Grid x:Name="ClockSafeArea"
+              SizeChanged="OnClockSafeAreaSizeChanged">
+            <VerticalStackLayout x:Name="ClockContent"
+                                 HorizontalOptions="Center"
+                                 VerticalOptions="Center"
+                                 Spacing="12">
+                <Label x:Name="TimeLabel"
+                       HorizontalOptions="Center"
+                       FontSize="96"
+                       FontAttributes="Bold"
+                       TextColor="#D8D8D8"
+                       LineBreakMode="NoWrap"
+                       HandlerChanged="OnTimeLabelHandlerChanged"
+                       SemanticProperties.HeadingLevel="Level1" />
+                <Label x:Name="DateLabel"
+                       HorizontalOptions="Center"
+                       FontSize="18"
+                       TextColor="#858585"
+                       SemanticProperties.HeadingLevel="Level2" />
+            </VerticalStackLayout>
+        </Grid>
 
         <Button Grid.Row="0"
                 Text="Settings"

@@ -4,6 +4,7 @@
              x:Class="BedsideAlarmClock.SettingsPage"
              Title="Settings"
              BackgroundColor="#000000">
+    <ScrollView>
     <VerticalStackLayout Padding="24,16"
                          Spacing="20">
         <Grid ColumnDefinitions="*,Auto"
@@ -39,5 +40,28 @@
                     VerticalOptions="Center"
                     SemanticProperties.Description="Show seconds on the clock" />
         </Grid>
+        <Grid ColumnDefinitions="*,Auto"
+              ColumnSpacing="16">
+            <Label Text="Show date"
+                   FontSize="18"
+                   TextColor="#D8D8D8"
+                   VerticalOptions="Center" />
+            <Switch x:Name="ShowDateSwitch"
+                    Grid.Column="1"
+                    VerticalOptions="Center"
+                    SemanticProperties.Description="Show the date on the clock" />
+        </Grid>
+
+        <VerticalStackLayout Spacing="4">
+            <Label Text="Clock font"
+                   FontSize="18"
+                   TextColor="#D8D8D8" />
+            <Picker x:Name="ClockFontPicker"
+                    Title="Select a clock font"
+                    TextColor="#D8D8D8"
+                    TitleColor="#858585"
+                    SemanticProperties.Description="Clock font" />
+        </VerticalStackLayout>
     </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

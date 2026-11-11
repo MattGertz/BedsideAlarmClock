@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/BedsideAlarmClock/BedsideAlarmClock.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BedsideAlarmClock.Display.Tests/BedsideAlarmClock.Display.Tests.csproj" />
+  </Folder>
 </Solution>
