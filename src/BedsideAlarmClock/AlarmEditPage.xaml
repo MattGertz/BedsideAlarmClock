@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="BedsideAlarmClock.AlarmEditPage"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="#000000">
+    <Grid RowDefinitions="Auto,*" Padding="20,12" RowSpacing="8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+            <Button Text="&#x2190;" Clicked="OnBackClicked"
+                    WidthRequest="48" HeightRequest="48" Padding="0"
+                    FontSize="26" BackgroundColor="Transparent" TextColor="#D8D8D8"
+                    SemanticProperties.Description="Back to alarms" />
+            <Label x:Name="TitleLabel" Grid.Column="1" FontSize="24"
+                   FontAttributes="Bold" TextColor="#EEEEEE"
+                   VerticalOptions="Center" SemanticProperties.HeadingLevel="Level1" />
+            <Button x:Name="SaveButton" Grid.Column="2" Text="Save"
+                    Clicked="OnSaveClicked" BackgroundColor="#333333" TextColor="#FFFFFF" />
+        </Grid>
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout x:Name="EditorContent" Spacing="16" Padding="0,4,0,20">
+                <Label Text="Setup only: alarms will not ring yet."
+                       TextColor="#FFD180" FontSize="15" />
+                <Label Text="Time" TextColor="#BDBDBD" FontSize="16" />
+                <Button x:Name="TimeButton" Clicked="OnTimeClicked"
+                        HorizontalOptions="Start" FontSize="32"
+                        BackgroundColor="#262626" TextColor="#FFFFFF"
+                        SemanticProperties.Hint="Choose alarm time" />
+                <Label Text="Repeat" TextColor="#BDBDBD" FontSize="16" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                    <Button x:Name="OnceButton" Text="Once" Clicked="OnOnceClicked" />
+                    <Button x:Name="RepeatButton" Grid.Column="1" Text="Repeat" Clicked="OnRepeatClicked" />
+                </Grid>
+                <Label x:Name="OnceDescription" TextColor="#BDBDBD" FontSize="14" />
+                <VerticalStackLayout x:Name="RepeatOptions" Spacing="8">
+                    <Label Text="Days" TextColor="#BDBDBD" FontSize="16" />
+                    <Grid x:Name="DayGrid" ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="2" />
+                    <FlexLayout Direction="Row" Wrap="Wrap">
+                        <Button Text="Weekdays" Clicked="OnWeekdaysClicked"
+                                BackgroundColor="Transparent" TextColor="#D8D8D8" />
+                        <Button Text="Weekends" Clicked="OnWeekendsClicked"
+                                BackgroundColor="Transparent" TextColor="#D8D8D8" />
+                        <Button Text="Every day" Clicked="OnEveryDayClicked"
+                                BackgroundColor="Transparent" TextColor="#D8D8D8" />
+                    </FlexLayout>
+                </VerticalStackLayout>
+                <Label Text="Label (optional)" TextColor="#BDBDBD" FontSize="16" />
+                <Entry x:Name="LabelEntry" Placeholder="e.g. Work"
+                       TextColor="#FFFFFF" PlaceholderColor="#858585"
+                       MaxLength="100" />
+                <Button x:Name="DeleteButton" Text="Delete alarm" Clicked="OnDeleteClicked"
+                        HorizontalOptions="Start" BackgroundColor="Transparent"
+                        TextColor="#FFAAAA" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

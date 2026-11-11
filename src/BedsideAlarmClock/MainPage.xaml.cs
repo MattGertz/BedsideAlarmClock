@@ -140,4 +140,9 @@ public partial class MainPage : ContentPage
         await Shell.Current.GoToAsync(nameof(SettingsPage));
     }
 
+    private async void OnAlarmsClicked(object? sender, EventArgs e)
+    {
+        await Navigation.PushAsync(new AlarmListPage());
+    }
+
 }

@@ -176,3 +176,10 @@ Phase 1 will target `net10.0-android` only. Windows compilation is intentionally
 - The user verified that brightness returns to normal outside the clock and that the minimum is satisfactory in a dark room.
 - Notifications and other activities may temporarily cover or pause the clock; returning refreshes the time and restores clock-only brightness and keep-awake behavior. The clock does not automatically reopen after a device reboot or update. Alarm scheduling and reboot recovery are future phases and are not yet implemented.
 - On an isolated emulator, the notification shade and a separate Settings activity were opened and dismissed; after return, the clock advanced, its window brightness and keep-awake flag were restored, and a subsequent two-minute pixel shift moved 48 physical pixels. Real phone calls, overnight operation, and reboot recovery have not been verified by this test.
+
+## Phase 3 alarm setup
+
+- The approved interaction plan is in [Phase3Plan.md](Phase3Plan.md). Alarm setup is explicitly marked as nonfunctional for delivery: Phase 3 does not schedule or ring alarms.
+- A versioned local JSON file stores validated one-time and repeating alarm definitions. Skip-next records a particular local date; changing the time or repeating days clears that exception after confirmation.
+- One-time dates and recurring occurrence previews are calculated using the device's current time zone. The calculation currently uses the proposed spring-gap and fall-overlap policies above; confirm those policies before implementing alarm delivery.
+- Alarm definitions, persistence, and occurrence calculations have focused tests. UI behavior has been exercised on an isolated Android emulator; the interface still needs review on the S25 Ultra before Phase 3 is accepted.

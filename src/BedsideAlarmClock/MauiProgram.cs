@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using BedsideAlarmClock.Display;
+using BedsideAlarmClock.Alarms;
 using BedsideAlarmClock.Platforms.Android;
 
 namespace BedsideAlarmClock;
@@ -17,6 +18,7 @@ public static class MauiProgram
 			});
 		builder.Services.AddSingleton<ClockBrightness>();
 		builder.Services.AddSingleton<IClockBrightness>(services => services.GetRequiredService<ClockBrightness>());
+		builder.Services.AddSingleton(_ => new AlarmRepository(Path.Combine(FileSystem.AppDataDirectory, "alarms.json")));
 
 #if DEBUG
 		builder.Logging.AddDebug();

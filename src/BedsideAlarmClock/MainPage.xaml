@@ -29,14 +29,20 @@
             </VerticalStackLayout>
         </Grid>
 
-        <Button Grid.Row="0"
-                Text="Settings"
-                FontSize="13"
-                TextColor="#707070"
-                BackgroundColor="Transparent"
-                HorizontalOptions="End"
-                VerticalOptions="End"
-                Clicked="OnSettingsClicked"
-                SemanticProperties.Hint="Open clock settings" />
+        <HorizontalStackLayout HorizontalOptions="End"
+                               VerticalOptions="End">
+            <Button Text="Alarms"
+                    FontSize="13"
+                    TextColor="#A0A0A0"
+                    BackgroundColor="Transparent"
+                    Clicked="OnAlarmsClicked"
+                    SemanticProperties.Hint="Open alarm setup" />
+            <Button Text="Settings"
+                    FontSize="13"
+                    TextColor="#A0A0A0"
+                    BackgroundColor="Transparent"
+                    Clicked="OnSettingsClicked"
+                    SemanticProperties.Hint="Open clock settings" />
+        </HorizontalStackLayout>
     </Grid>
 </ContentPage>
