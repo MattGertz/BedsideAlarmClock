@@ -61,6 +61,9 @@ internal static class AlarmPresentation
         Days = alarm.Days,
         Label = alarm.Label,
         OnceDate = alarm.OnceDate,
-        SkipDate = alarm.SkipDate
+        SkipDate = alarm.SkipDate,
+        SoundUri = alarm.SoundUri,
+        Volume = alarm.Volume,
+        SnoozeMinutes = alarm.SnoozeMinutes
     };
 }

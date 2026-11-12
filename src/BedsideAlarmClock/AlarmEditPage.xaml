@@ -18,7 +18,7 @@
         </Grid>
         <ScrollView Grid.Row="1">
             <VerticalStackLayout x:Name="EditorContent" Spacing="16" Padding="0,4,0,20">
-                <Label Text="Setup only: alarms will not ring yet."
+                <Label x:Name="DeliveryStatus" Text="Setup only: alarms will not ring yet."
                        TextColor="#FFD180" FontSize="15" />
                 <Label Text="Time" TextColor="#BDBDBD" FontSize="16" />
                 <Button x:Name="TimeButton" Clicked="OnTimeClicked"
@@ -47,6 +47,19 @@
                 <Entry x:Name="LabelEntry" Placeholder="e.g. Work"
                        TextColor="#FFFFFF" PlaceholderColor="#858585"
                        MaxLength="100" />
+                <Label Text="Alarm sound" TextColor="#BDBDBD" FontSize="16" />
+                <Button x:Name="SoundButton" Clicked="OnSoundClicked"
+                        HorizontalOptions="Start" BackgroundColor="#262626" TextColor="#FFFFFF" />
+                <Label Text="Alarm volume (does not change system volume)" TextColor="#BDBDBD" FontSize="16" />
+                <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100"
+                        SemanticProperties.Description="Alarm playback volume percentage" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Text="Enable snooze" TextColor="#BDBDBD" FontSize="16" VerticalOptions="Center" />
+                    <Switch x:Name="SnoozeSwitch" Grid.Column="1" Toggled="OnSnoozeToggled" />
+                </Grid>
+                <Entry x:Name="SnoozeMinutesEntry" Placeholder="Snooze minutes"
+                       Keyboard="Numeric" TextColor="#FFFFFF" PlaceholderColor="#858585"
+                       SemanticProperties.Description="Snooze interval in minutes" />
                 <Button x:Name="DeleteButton" Text="Delete alarm" Clicked="OnDeleteClicked"
                         HorizontalOptions="Start" BackgroundColor="Transparent"
                         TextColor="#FFAAAA" />

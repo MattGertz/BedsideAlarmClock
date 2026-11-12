@@ -65,6 +65,10 @@ internal static class AlarmRegistrationPlanner
                 ObservedAt = entry.ObservedAt,
                 PlaybackReservedAt = entry.PlaybackReservedAt,
                 PlaybackStartedAt = entry.PlaybackStartedAt,
+                InterruptedAt = entry.InterruptedAt,
+                ClockUncertainAt = entry.ClockUncertainAt,
+                SnoozedFromRegistrationId = entry.SnoozedFromRegistrationId,
+                SnoozedFromKind = entry.SnoozedFromKind,
                 MissedAt = entry.MissedAt,
                 MissedReason = entry.MissedReason,
                 CancellationPending = entry.CancellationPending

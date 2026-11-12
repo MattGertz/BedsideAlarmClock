@@ -152,6 +152,172 @@ public sealed class AlarmCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task ConfiguredMutationsReconcileSavedDefinitions()
+    {
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var scheduler = new TestScheduler();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider());
+        var coordinator = new AlarmCoordinator(new AlarmRepository(Path.Combine(directory, "alarms.json")),
+            reconciler, () => TimeZoneInfo.Utc);
+        var alarm = Once();
+        await coordinator.AddAsync(alarm);
+        var first = Assert.Single(scheduler.Registered);
+        Assert.Equal(DateTimeOffset.Parse("2025-01-02T07:30:00Z"), first.Value);
+
+        var renamed = Copy(alarm);
+        renamed.Label = "Changed";
+        await coordinator.ReplaceAsync(alarm, renamed);
+        Assert.Equal(first.Key, Assert.Single(scheduler.Registered).Key);
+
+        var changed = Copy(renamed);
+        changed.Hour = 8;
+        await coordinator.ReplaceAsync(renamed, changed);
+        var replacement = Assert.Single(scheduler.Registered);
+        Assert.NotEqual(first.Key, replacement.Key);
+        Assert.Equal(DateTimeOffset.Parse("2025-01-02T08:30:00Z"), replacement.Value);
+        Assert.Equal(replacement.Key, Assert.Single(await store.LoadAsync()).Registration);
+
+        var disabled = Copy(changed);
+        disabled.Enabled = false;
+        await coordinator.ReplaceAsync(changed, disabled);
+        Assert.Empty(scheduler.Registered);
+        await coordinator.ReplaceAsync(disabled, changed);
+        Assert.Single(scheduler.Registered);
+        await coordinator.DeleteAsync(changed);
+        Assert.Empty(scheduler.Registered);
+        Assert.Empty(await store.LoadAsync());
+    }
+
+    [Fact]
+    public async Task ReconciliationFailureReportsSavedChangeAndCanBeRetried()
+    {
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var scheduler = new TestScheduler { FailSchedule = true };
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider());
+        var coordinator = new AlarmCoordinator(new AlarmRepository(Path.Combine(directory, "alarms.json")),
+            reconciler, () => TimeZoneInfo.Utc);
+        var alarm = Once();
+
+        var error = await Assert.ThrowsAsync<AlarmScheduleException>(() => coordinator.AddAsync(alarm));
+        Assert.IsType<InvalidOperationException>(error.InnerException);
+        Assert.Equal(alarm.Id, Assert.Single(await coordinator.LoadAsync()).Id);
+        var identity = Assert.Single(await store.LoadAsync()).Registration;
+        scheduler.FailSchedule = false;
+        await coordinator.ReconcileRegularAsync(reconciler, TimeZoneInfo.Utc);
+        Assert.Equal(identity, Assert.Single(scheduler.Registered).Key);
+    }
+
+    [Fact]
+    public async Task CancellationFailureAfterDeleteRetainsIdentityForRetry()
+    {
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var scheduler = new TestScheduler();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider());
+        var coordinator = new AlarmCoordinator(new AlarmRepository(Path.Combine(directory, "alarms.json")),
+            reconciler, () => TimeZoneInfo.Utc);
+        var alarm = Once();
+        await coordinator.AddAsync(alarm);
+        var identity = Assert.Single(scheduler.Registered).Key;
+        scheduler.FailCancel = true;
+
+        var error = await Assert.ThrowsAsync<AlarmScheduleException>(() => coordinator.DeleteAsync(alarm));
+        Assert.IsType<InvalidOperationException>(error.InnerException);
+        Assert.Empty(await coordinator.LoadAsync());
+        var pending = Assert.Single(await store.LoadAsync());
+        Assert.Equal(AlarmRegistrationState.PendingCancellation, pending.State);
+        Assert.Equal(identity, pending.Registration);
+        Assert.Equal(identity, Assert.Single(scheduler.Registered).Key);
+
+        scheduler.FailCancel = false;
+        await coordinator.ReconcileRegularAsync(reconciler, TimeZoneInfo.Utc);
+        Assert.Empty(scheduler.Registered);
+        Assert.Empty(await store.LoadAsync());
+    }
+
+    [Fact]
+    public async Task SkipAndUndoReplaceTheScheduledOccurrence()
+    {
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var scheduler = new TestScheduler();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider());
+        var coordinator = new AlarmCoordinator(new AlarmRepository(Path.Combine(directory, "alarms.json")),
+            reconciler, () => TimeZoneInfo.Utc);
+        var alarm = new AlarmDefinition
+        {
+            Id = Guid.NewGuid(), Hour = 7, Minute = 30, Enabled = true,
+            IsRepeating = true, Days = AlarmDays.Thursday
+        };
+        await coordinator.AddAsync(alarm);
+        var first = Assert.Single(scheduler.Registered);
+        var skipped = Copy(alarm);
+        skipped.SkipDate = new DateOnly(2025, 1, 2);
+        await coordinator.ReplaceAsync(alarm, skipped);
+        var afterSkip = Assert.Single(scheduler.Registered);
+        Assert.NotEqual(first.Key, afterSkip.Key);
+        Assert.Equal(DateTimeOffset.Parse("2025-01-09T07:30:00Z"), afterSkip.Value);
+
+        await coordinator.ReplaceAsync(skipped, alarm);
+        var afterUndo = Assert.Single(scheduler.Registered);
+        Assert.NotEqual(first.Key, afterUndo.Key);
+        Assert.NotEqual(afterSkip.Key, afterUndo.Key);
+        Assert.Equal(first.Value, afterUndo.Value);
+    }
+
+    [Fact]
+    public async Task DueRegistrationReportsSavedEditWithoutDroppingUnresolvedOccurrence()
+    {
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var alarm = Once();
+        var due = new AlarmRegistrationEntry
+        {
+            AlarmId = alarm.Id, RegistrationId = Guid.NewGuid(), Kind = AlarmRegistrationKind.Regular,
+            State = AlarmRegistrationState.Desired, TriggerAt = DateTimeOffset.Parse("2025-01-01T00:00:00Z")
+        };
+        await store.SaveAsync(new[] { due });
+        var scheduler = new TestScheduler();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider());
+        var repository = new AlarmRepository(Path.Combine(directory, "alarms.json"));
+        await repository.SaveAsync(new[] { alarm });
+        var coordinator = new AlarmCoordinator(repository, reconciler, () => TimeZoneInfo.Utc);
+        var changed = Copy(alarm);
+        changed.Enabled = false;
+
+        var error = await Assert.ThrowsAsync<AlarmScheduleException>(() => coordinator.ReplaceAsync(alarm, changed));
+        Assert.IsType<OverdueAlarmRegistrationException>(error.InnerException);
+        Assert.False(Assert.Single(await coordinator.LoadAsync()).Enabled);
+        Assert.Equal(due.Registration, Assert.Single(await store.LoadAsync()).Registration);
+        Assert.Empty(scheduler.Registered);
+    }
+
+    [Fact]
+    public async Task ConfiguredReconciliationHoldsGateThroughMutation()
+    {
+        var store = new BlockingStore(new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json")));
+        var scheduler = new TestScheduler();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider());
+        var coordinator = new AlarmCoordinator(new AlarmRepository(Path.Combine(directory, "alarms.json")),
+            reconciler, () => TimeZoneInfo.Utc);
+        var original = Once();
+        var updated = Copy(original);
+        updated.Hour = 8;
+
+        var add = coordinator.AddAsync(original);
+        Task<IReadOnlyList<AlarmDefinition>> edit;
+        try
+        {
+            await store.LoadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            edit = coordinator.ReplaceAsync(original, updated);
+            await Assert.ThrowsAsync<TimeoutException>(() => edit.WaitAsync(TimeSpan.FromMilliseconds(500)));
+        }
+        finally
+        {
+            store.Continue.TrySetResult();
+        }
+        await Task.WhenAll(add, edit);
+        Assert.Equal(DateTimeOffset.Parse("2025-01-02T08:30:00Z"), Assert.Single(scheduler.Registered).Value);
+    }
+
+    [Fact]
     public async Task InspectionDistinguishesObsoleteEarlyAndCurrentRegularCallbacks()
     {
         var coordinator = CreateCoordinator();
@@ -305,8 +471,17 @@ public sealed class AlarmCoordinatorTests : IDisposable
     private sealed class TestScheduler : IAlarmRegistrationScheduler
     {
         public Dictionary<AlarmRegistration, DateTimeOffset> Registered { get; } = new();
-        public void Schedule(AlarmRegistration registration, DateTimeOffset triggerAt) =>
+        public bool FailSchedule { get; set; }
+        public bool FailCancel { get; set; }
+        public void Schedule(AlarmRegistration registration, DateTimeOffset triggerAt)
+        {
+            if (FailSchedule) throw new InvalidOperationException("Simulated scheduling failure.");
             Registered[registration] = triggerAt;
-        public void Cancel(AlarmRegistration registration) => Registered.Remove(registration);
+        }
+        public void Cancel(AlarmRegistration registration)
+        {
+            if (FailCancel) throw new InvalidOperationException("Simulated cancellation failure.");
+            Registered.Remove(registration);
+        }
     }
 }

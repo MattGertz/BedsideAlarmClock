@@ -41,6 +41,8 @@ adb -s emulator-5562 shell am start -n com.example.bedsidealarmschedulerprobe/cr
 adb -s emulator-5562 logcat -d -s AlarmAudioProbe:I
 adb -s emulator-5562 shell am start -n com.example.bedsidealarmschedulerprobe/crc64482c9453999fce20.MainActivity --ez audio true --es focus_mode best_effort
 adb -s emulator-5562 logcat -d -s AlarmAudioProbe:I
+adb -s emulator-5562 shell am start -n com.example.bedsidealarmschedulerprobe/crc64482c9453999fce20.MainActivity --ez audio true --es focus_mode component
+adb -s emulator-5562 logcat -d -s AlarmAudioProbe:I BedsideAlarmPlayer:I
 ```
 
 The probe schedules an alarm about ten seconds ahead and finishes the activity.
@@ -56,6 +58,10 @@ and proceeds even if the request fails. Focus callbacks are logged but do not
 stop the player. The service samples playback position for about 2.5 seconds
 and then stops solely to bound this diagnostic; it is not the eventual
 dismiss/snooze behavior. Omitting `focus_mode` selects `best_effort`.
+`component` uses the clock's native player component with no focus request.
+It verifies that a rejected pre-start check prevents starting, that playback
+position advances, and that release is idempotent and prevents another start.
+The component's focus policy will be owned by the future foreground service.
 The audio scenario uses a fixed registration identity so a subsequent run
 replaces a pending run; do not start a new run while the previous one is
 delivering. The probe times out and releases its player and
@@ -82,11 +88,18 @@ competing apps, calls, Do Not Disturb, and Samsung behavior have not been
 tested. Ignoring a focus callback cannot prevent the operating system from
 muting, interrupting, or stopping audio.
 
+The `component` mode also passed on an isolated Android 15/API 35 emulator
+targeting API 36 after process death. It exercised the actual native player
+component, not the clock app's delivery path. Host audio was disabled, so it
+did not establish audibility.
+
 In earlier runs, the service diagnostics reported the alarm-clock
 foreground-start exemption while denying the while-in-use capability used for
 audio control. This is a result for that emulator, not all Android devices.
-The production clock app has no delivery receiver, playback service or player
-yet, and must not be relied on as an alarm.
+The normal clock build remains setup-only. An experimental build now connects
+a delivery receiver, playback service and player; see the Phase 4 plan for
+its validation status and limitations. Neither build should be relied on as
+the only alarm.
 
 The probe makes real alarm-clock registrations on the selected emulator.
 It does not test actual audibility, recovery, UI integration, or Samsung

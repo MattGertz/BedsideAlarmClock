@@ -16,6 +16,9 @@ public class MainActivity : MauiAppCompatActivity
     private float _gestureStartBrightness;
     private bool _gestureTracking;
     private bool _adjustingBrightness;
+#if ALARM_DELIVERY_EXPERIMENT
+    private bool _preparingAlarms;
+#endif
     private ClockBrightness Brightness => IPlatformApplication.Current!.Services.GetRequiredService<ClockBrightness>();
 
     protected override void OnResume()
@@ -26,12 +29,50 @@ public class MainActivity : MauiAppCompatActivity
             Brightness.AttachWindow(window);
         }
         HideSystemBars();
+#if ALARM_DELIVERY_EXPERIMENT
+        _ = PrepareAlarmsAsync();
+        if (Shell.Current?.CurrentPage is SettingsPage settingsPage)
+            settingsPage.RefreshAlarmPermissions();
+#endif
 
         if (Shell.Current?.CurrentPage is MainPage clockPage)
         {
             clockPage.ResumeClock();
         }
     }
+
+#if ALARM_DELIVERY_EXPERIMENT
+    private async Task PrepareAlarmsAsync()
+    {
+        if (_preparingAlarms) return;
+        _preparingAlarms = true;
+        try
+        {
+            await AndroidAlarmRecovery.RunAsync(this);
+            if (AlarmPermissions.NeedsNotificationPermission(this) &&
+                !Preferences.Default.Get("alarm.notifications.asked", false))
+            {
+                var accepted = await Microsoft.Maui.Controls.Application.Current!.Windows[0].Page!
+                    .DisplayAlertAsync("Alarm notifications",
+                        "Notifications provide alarm controls when the full-screen display is unavailable.",
+                        "Continue", "Not now");
+                Preferences.Default.Set("alarm.notifications.asked", true);
+                if (accepted && OperatingSystem.IsAndroidVersionAtLeast(33))
+                    RequestPermissions([global::Android.Manifest.Permission.PostNotifications], 7104);
+            }
+        }
+        catch (Exception ex)
+        {
+            AndroidAlarmRecovery.ShowFailure(this, ex);
+            await Microsoft.Maui.Controls.Application.Current!.Windows[0].Page!
+                .DisplayAlertAsync("Alarm schedule needs attention", ex.Message, "OK");
+        }
+        finally
+        {
+            _preparingAlarms = false;
+        }
+    }
+#endif
 
     protected override void OnPause()
     {

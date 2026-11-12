@@ -27,17 +27,55 @@ internal sealed class AlarmRegistrationReconciler(
         var cancellations = plan.Where(entry =>
             entry.Kind == AlarmRegistrationKind.Regular &&
             (entry.State == AlarmRegistrationState.PendingCancellation ||
-                (entry.State is AlarmRegistrationState.Missed or AlarmRegistrationState.PlaybackCompleted &&
+                (entry.State is AlarmRegistrationState.Missed or AlarmRegistrationState.PlaybackCompleted or AlarmRegistrationState.Interrupted or AlarmRegistrationState.ClockUncertain &&
                  entry.CancellationPending))).ToList();
         foreach (var entry in cancellations)
             scheduler.Cancel(entry.Registration);
         if (cancellations.Count > 0)
         {
             foreach (var entry in cancellations.Where(entry =>
-                entry.State is AlarmRegistrationState.Missed or AlarmRegistrationState.PlaybackCompleted))
+                entry.State is AlarmRegistrationState.Missed or AlarmRegistrationState.PlaybackCompleted or AlarmRegistrationState.Interrupted or AlarmRegistrationState.ClockUncertain))
                 entry.CancellationPending = false;
             await store.SaveAsync(plan.Where(entry =>
                 entry.Kind != AlarmRegistrationKind.Regular || entry.State != AlarmRegistrationState.PendingCancellation).ToList());
+        }
+    }
+
+    public async Task ReconcileAllAsync(IReadOnlyList<AlarmDefinition> alarms, TimeZoneInfo timeZone)
+    {
+        await ReconcileRegularAsync(alarms, timeZone);
+        var entries = (await store.LoadAsync()).ToList();
+        var changed = false;
+        foreach (var entry in entries.Where(item =>
+            item.Kind == AlarmRegistrationKind.Snooze && item.State == AlarmRegistrationState.Desired))
+        {
+            if (!alarms.Any(alarm => alarm.Id == entry.AlarmId))
+            {
+                entry.State = AlarmRegistrationState.PendingCancellation;
+                changed = true;
+            }
+        }
+        if (changed) await store.SaveAsync(entries);
+
+        foreach (var entry in entries.Where(item =>
+            item.Kind == AlarmRegistrationKind.Snooze && item.State == AlarmRegistrationState.Desired))
+        {
+            if (entry.TriggerAt <= timeProvider.GetUtcNow())
+                throw new OverdueAlarmRegistrationException(entry.Registration);
+            scheduler.Schedule(entry.Registration, entry.TriggerAt);
+        }
+
+        var cancellations = entries.Where(entry => entry.Kind == AlarmRegistrationKind.Snooze &&
+            (entry.State == AlarmRegistrationState.PendingCancellation ||
+             (entry.State is AlarmRegistrationState.Missed or AlarmRegistrationState.PlaybackCompleted or AlarmRegistrationState.Interrupted or AlarmRegistrationState.ClockUncertain &&
+              entry.CancellationPending))).ToList();
+        foreach (var entry in cancellations) scheduler.Cancel(entry.Registration);
+        if (cancellations.Count > 0)
+        {
+            foreach (var entry in cancellations.Where(item => item.State != AlarmRegistrationState.PendingCancellation))
+                entry.CancellationPending = false;
+            await store.SaveAsync(entries.Where(item =>
+                item.Kind != AlarmRegistrationKind.Snooze || item.State != AlarmRegistrationState.PendingCancellation).ToList());
         }
     }
 }

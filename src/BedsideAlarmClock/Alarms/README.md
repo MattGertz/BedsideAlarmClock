@@ -1,5 +1,16 @@
 # Alarm model API
 
+**Current integration:** normal builds remain setup-only. With
+`-p:EnableAlarmDeliveryExperiment=true`, the Android app connects the
+coordinator, scheduler, receiver, foreground player, controls, snooze and
+recovery. Experimental delivery is not yet a reliable replacement for a
+backup alarm. See [Phase 4 progress](../../../Phase4Plan.md#current-progress)
+for tested scenarios and unresolved risks.
+
+The descriptions below document the original groundwork and its contracts.
+References to unused or disconnected components describe that earlier stage,
+not the current experimental integration.
+
 `AlarmDefinition.Validate()` throws `InvalidDataException` for invalid data.
 IDs must be nonempty and unique in a repository. Times are 00:00–23:59;
 labels may be empty but not null. A once alarm has `OnceDate`, no days and
@@ -22,9 +33,14 @@ overwriting a newer change. Its internal regular-reconciliation entry point
 also loads definitions and runs the reconciler under that same gate. All
 callers must use the same coordinator; this does not coordinate separate
 processes or code that accesses the repositories or reconciler directly.
-Edits do not automatically reconcile; if an edit follows reconciliation,
-the schedule can be stale until another pass. Integration must coordinate
-the mutation and required reconciliation and report scheduling failures.
+When constructed with a reconciler, the coordinator saves each add, replace,
+or delete and reconciles the saved definitions before releasing the gate.
+If reconciliation fails, `AlarmScheduleException` explicitly reports that the
+change was saved but scheduling is uncertain; a retry must reconcile the
+latest definitions, not repeat the mutation. The UI recognizes this outcome.
+The app does not yet configure a reconciler, so edits in the app still do not
+schedule alarms. Startup retry and delivery/recovery integration remain to
+be implemented before enabling Android scheduling.
 
 The unused `InspectRegularDeliveryAsync` entry point reads both existing files
 under the same gate and checks the callback identity, desired state, and
@@ -81,6 +97,12 @@ recovery reports them separately instead of calling them missed. There is no
 live player, snooze, or crash-recovery integration yet. A durable started
 record alone does not establish that playback is still running.
 
+The Android project contains an unused native sound player. It is not yet
+connected to this coordinator or a production foreground service. Its
+asynchronous player-thread start cannot directly replace the synchronous start
+action above: integration must preserve the shared-gate and deadline checks
+through the actual player start, without blocking the main thread.
+
 The unused `CompleteStartedRegularPlaybackAsync` records completion and
 retains the old identity for cancellation. It retries the one-time disable
 if a previous definition write failed, without disabling a definition edited
@@ -88,6 +110,36 @@ to a different occurrence. Completion does not stop a player by itself; the
 eventual service must coordinate the user action, player and journal, and
 handle errors. Completed records are retained; cleanup policy is not yet
 implemented.
+
+The unused `SnoozeStartedRegularPlaybackAsync` records a completed regular
+playback and a linked snooze due ten minutes later in the same journal write,
+then asks the scheduler to register it. The shared gate serializes snooze
+with edits, completion and other coordinator operations. A duplicate request
+or retry uses the same snooze identity and trigger; the scheduler must make
+repeated registration idempotent. Separate active occurrences of one alarm
+can have separate snoozes. A failed journal write or scheduler call propagates
+an error; the journal may already have changed and a scheduler failure may
+have occurred after Android accepted the registration. Retry reads the
+existing identity. An overdue snooze is not silently rescheduled into the
+past.
+
+An equivalent transition can snooze a started snooze; the source kind and
+identity are retained so repeated snoozes and overlapping occurrences remain
+distinct. Snooze delivery has disconnected record, reservation, start and
+completion methods that share the regular playback checks. A separate
+transition can record a snooze as missed while retaining callback evidence.
+These methods accept a
+linked snooze while its definition exists, including a disabled one-time alarm;
+deletion makes a pending snooze stale. This is not yet a complete policy for
+edits or disabling alarms, and cancellation of stale snoozes is not wired up.
+
+These transitions do not stop or control a player. A completed source record
+is a durable user-action intent, not proof that the snooze was scheduled or
+that playback stopped; callers must retain playback and report failures until
+the schedule call succeeds. Automatic missed snooze recovery, clock changes, process
+death, reboot, player coordination, configurable duration, disabling snooze,
+and user-facing controls remain unimplemented. The regular reconciler does
+not register, cancel, or recover snoozes automatically.
 
 `AlarmDeliveryTiming.Evaluate` applies the agreed 30-second inclusive limit
 to a proposed start decision and treats a known outage at the scheduled time
@@ -132,10 +184,12 @@ an already-delivered callback cannot arrive.
 `AlarmRegistrationRepository` is unused groundwork for a separate, versioned
 registration journal. A desired entry describes what should be scheduled,
 not proof that Android accepted it. A pending-cancellation entry retains an
-obsolete identity until cancellation succeeds. At most one desired entry is
-allowed per alarm and kind; old identities can coexist with the new one.
-An observed regular delivery records its first callback time until it can be
-resolved; snooze observations are not implemented.
+obsolete identity until cancellation succeeds. At most one desired regular
+entry is allowed per alarm; separate desired snoozes may coexist. A linked
+snooze requires a unique completed source in the journal. Old
+identities can coexist with new ones.
+An observed regular or linked snooze delivery records its first callback time
+until it can be resolved.
 Missed regular occurrences remain in the journal for future reporting even
 after their Android cancellation completes. A missed record can coexist with
 the next desired occurrence.
@@ -178,9 +232,9 @@ The reconciler does not serialize itself with other operations. The coordinator
 entry point protects its read and reconciliation against coordinator mutations,
 but future callbacks and all journal access must also participate in the same
 gate. Integrated missed detection and user-facing reporting, active delivery,
-journal-loss recovery, automatic reconciliation after edits, and coordinated
-recovery are not implemented; this code must not be connected to the app
-until those paths are addressed.
+journal-loss recovery, automatic startup retry, and coordinated recovery are not implemented; Android
+scheduling must not be enabled in the app until the necessary delivery and
+recovery paths are addressed.
 
 `AlarmOccurrenceService.GetNextOccurrence(alarm, after, zone)` returns the
 first occurrence strictly after the supplied instant, or null if disabled,

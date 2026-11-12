@@ -19,9 +19,13 @@
                     Clicked="OnAddClicked" TextColor="#FFFFFF"
                     BackgroundColor="#333333" SemanticProperties.Description="Add alarm" />
         </Grid>
-        <Label Grid.Row="1" Text="Setup only: alarms will not ring yet."
-               TextColor="#FFD180" FontSize="15"
-               SemanticProperties.HeadingLevel="Level2" />
+        <VerticalStackLayout Grid.Row="1">
+            <Label x:Name="DeliveryStatus" Text="Setup only: alarms will not ring yet."
+                   TextColor="#FFD180" FontSize="15"
+                   SemanticProperties.HeadingLevel="Level2" />
+            <Button x:Name="ActiveControlsButton" Text="Open active alarm controls"
+                    IsVisible="False" Clicked="OnActiveControlsClicked" />
+        </VerticalStackLayout>
         <ScrollView Grid.Row="2">
             <VerticalStackLayout x:Name="AlarmRows" Spacing="8" />
         </ScrollView>

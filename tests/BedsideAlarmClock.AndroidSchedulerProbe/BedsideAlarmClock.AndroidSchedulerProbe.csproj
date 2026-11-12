@@ -13,6 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\BedsideAlarmClock\Platforms\Android\AndroidAlarmScheduler.cs" Link="AndroidAlarmScheduler.cs" />
+    <Compile Include="..\..\src\BedsideAlarmClock\Platforms\Android\AndroidAlarmSoundPlayer.cs" Link="AndroidAlarmSoundPlayer.cs" />
     <Compile Include="..\..\src\BedsideAlarmClock\Alarms\AlarmRegistration.cs" Link="AlarmRegistration.cs" />
   </ItemGroup>
 </Project>

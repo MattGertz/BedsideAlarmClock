@@ -46,8 +46,8 @@ the only alarm during development.
 - Use alarm audio attributes and request focus on a best-effort basis: a
   denial or focus-loss callback must not by itself stop the alarm. Continue
   until the user dismisses or snoozes it, subject to system interruptions and
-  failures; do not change global volume. This policy is not implemented in
-  the production app yet.
+  failures; do not change global volume. This policy is implemented only in
+  the experimental delivery build.
 - Request and check notification and full-screen access as applicable.
   A high-priority notification with actions is the fallback when full-screen
   presentation is unavailable, but it may not be visible if notifications or
@@ -88,6 +88,45 @@ prerequisites for trusting this app as a bedside alarm.
 
 ## Current progress
 
+The delivery path is **experimental and disabled in normal builds**. To build
+it for investigation, pass `-p:EnableAlarmDeliveryExperiment=true`. The
+experimental app connects save-time scheduling, a receiver, a media-playback
+foreground service, alarm controls, snooze, sound selection and recovery.
+It requests audio focus on a best-effort basis, uses alarm audio attributes,
+and does not change system volume. It is not ready to be relied on as the
+only alarm.
+
+On an isolated Android 15/API 35 emulator targeting API 36, regular and
+snoozed deliveries, process death, locked-screen controls, reboot and
+timezone reconstruction were exercised. After a forward clock change, the
+occurrence was reported as uncertain, a stale callback was ignored, and
+the next regular occurrence was registered. A release build showed advancing
+player position and a working snooze action. Host audio was disabled, so none
+of these results proves audibility.
+
+The experimental app checks exact-alarm, notification and full-screen access
+in Settings and provides an in-app route to active controls. On the isolated
+emulator, that route opened the controls and dismissed a sounding alarm with
+notification permission revoked. A regular alarm and a snooze also overlapped
+and were dismissed independently. It tries the
+system alarm when a selected sound cannot be prepared or fails during
+playback; the runtime-failure path still needs device-level testing.
+
+Before enabling delivery by default, resolve or validate: recovery races
+between a clock change and an active delivery; uncertain journal or Android
+registration outcomes; snooze scheduling failure after playback is stopped;
+notification-disabled error visibility; and cleanup of abandoned imported
+sound files. Further test overlapping alarms, sound selection and failure, disabled
+snooze, Doze, DND, competing audio and interruptions. Before-first-unlock
+delivery is not supported or verified. Phone testing must establish actual
+audibility and Samsung-specific behavior; keep a separate backup alarm.
+
+### Historical groundwork
+
+The entries below describe earlier stages of implementation, not the current
+experimental build. References to unused or disconnected components and
+missing features refer to those earlier stages.
+
 - Checkpoint 1: the decisions above are recorded. Direct Boot and actual
   device-specific behavior remain to be tested.
 - Checkpoint 2 has started: alarm UI persistence now goes through a shared
@@ -115,10 +154,14 @@ prerequisites for trusting this app as a bedside alarm.
   propagate for retry. This is not a transaction: integration still requires
   one gate covering definitions, journal and delivery, stale-callback checks,
   missed-alarm handling, and a policy for journal loss.
-- The shared alarm coordinator now has an unused reconciliation entry point
-  that loads definitions and reconciles under the same in-process gate as
-  edits. Edits do not yet trigger reconciliation, and delivery and other
-  journal access do not participate in this gate.
+- The coordinator can now reconcile each saved add, edit or deletion under
+  the same in-process gate. A scheduling failure is reported separately from
+  a save failure, because the definition has already been saved and Android
+  state may be uncertain. Tests exercise changes, skips, failures and retry
+  with a fake scheduler. The production app does not configure this path:
+  scheduling alarms without a delivery receiver would create alarm clocks
+  that cannot ring. Startup retry, actual Android wiring, delivery and
+  recovery integration remain outstanding.
 - An unused regular-callback inspection checks identity, desired state,
   current definition and timing while holding the same in-process gate.
   Missing files produce an error. This inspection is a snapshot, not a
@@ -152,6 +195,14 @@ prerequisites for trusting this app as a bedside alarm.
   prevent planning a later regular occurrence. A disconnected completion
   transition retains the old identity for cancellation; it does not stop a
   player or implement snooze or recovery.
+- A disconnected snooze transition records a ten-minute follow-up alongside
+  completion of its regular source, then registers it through the scheduler.
+  Retries reuse the same identity, including after an uncertain write or
+  scheduling error; overlapping occurrences can retain separate snoozes.
+  Disconnected snooze callback, playback-start, completion and repeated-snooze
+  transitions now share the regular timing checks. This does not start or stop
+  a player, automatically receive callbacks, automatically recover
+  overdue or rebooted snoozes, provide a snooze setting, or run in the app.
 - A disconnected recovery pass can record multiple unobserved, due regular
   occurrences as missed in one journal write. It leaves observed callbacks,
   stale registrations and occurrences still within the 30-second window
@@ -171,6 +222,15 @@ prerequisites for trusting this app as a bedside alarm.
   audio was disabled, so audibility was not established. Focus-loss callbacks,
   competing audio, calls, DND, Samsung behavior, custom files, fallback, and
   playback recovery remain untested.
+- An unused Android native player component prepares the system alarm sound
+  on its own handler thread and supports a pre-start check and asynchronous
+  release. A separate probe exercised that component after process death;
+  playback position advanced, but host audio was disabled. This component is
+  not yet owned by a production foreground service or coordinated with the
+  alarm journal. It does not request focus, select custom sounds, implement
+  fallback, or provide controls. A blocking sound provider can still delay
+  preparation and release on its worker thread; timeout and fallback handling
+  require integration work.
 - On an isolated Android 15/API 35 emulator targeting API 36, a standalone
   probe verified exact-alarm access with `USE_EXACT_ALARM`, rejection when
   `SCHEDULE_EXACT_ALARM` was denied, distinct registrations and snoozes,

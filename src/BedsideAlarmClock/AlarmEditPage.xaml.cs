@@ -15,11 +15,15 @@ public partial class AlarmEditPage : ContentPage
     private int _minute;
     private bool _isRepeating;
     private AlarmDays _days;
+    private string? _soundUri;
     private bool _busy;
 
     public AlarmEditPage(AlarmDefinition? alarm)
     {
         InitializeComponent();
+#if ALARM_DELIVERY_EXPERIMENT
+        DeliveryStatus.Text = "Experimental alarm delivery: keep a backup alarm.";
+#endif
         _coordinator = IPlatformApplication.Current!.Services.GetRequiredService<AlarmCoordinator>();
         _isNew = alarm is null;
         var initialTime = DateTime.Now.AddMinutes(1);
@@ -34,6 +38,11 @@ public partial class AlarmEditPage : ContentPage
         _minute = _original.Minute;
         _isRepeating = _original.IsRepeating;
         _days = _original.Days;
+        _soundUri = _original.SoundUri;
+        VolumeSlider.Value = _original.Volume * 100;
+        SnoozeMinutesEntry.Text = (_original.SnoozeMinutes ?? 10).ToString(CultureInfo.InvariantCulture);
+        SnoozeSwitch.IsToggled = _original.SnoozeMinutes is not null;
+        SnoozeMinutesEntry.IsEnabled = SnoozeSwitch.IsToggled;
         LabelEntry.Text = _original.Label;
         TitleLabel.Text = _isNew ? "New alarm" : "Edit alarm";
         DeleteButton.IsVisible = !_isNew;
@@ -62,11 +71,16 @@ public partial class AlarmEditPage : ContentPage
     private bool IsDirty =>
         _hour != _original.Hour || _minute != _original.Minute ||
         _isRepeating != _original.IsRepeating || _days != _original.Days ||
-        (LabelEntry.Text ?? "") != _original.Label;
+        (LabelEntry.Text ?? "") != _original.Label ||
+        _soundUri != _original.SoundUri || Math.Round(VolumeSlider.Value) / 100 != _original.Volume ||
+        (SnoozeSwitch.IsToggled
+            ? !int.TryParse(SnoozeMinutesEntry.Text, out var minutes) || minutes != _original.SnoozeMinutes
+            : _original.SnoozeMinutes is not null);
 
     private void RefreshControls()
     {
         TimeButton.Text = AlarmPresentation.Time(_hour, _minute);
+        SoundButton.Text = _soundUri is null ? "System default" : "Selected sound";
         SemanticProperties.SetDescription(TimeButton, $"Alarm time, {TimeButton.Text}");
         SetChoiceStyle(OnceButton, !_isRepeating);
         SetChoiceStyle(RepeatButton, _isRepeating);
@@ -138,6 +152,41 @@ public partial class AlarmEditPage : ContentPage
     private void OnWeekdaysClicked(object? sender, EventArgs e) { _days = AlarmPresentation.Weekdays; RefreshControls(); }
     private void OnWeekendsClicked(object? sender, EventArgs e) { _days = AlarmPresentation.Weekends; RefreshControls(); }
     private void OnEveryDayClicked(object? sender, EventArgs e) { _days = AlarmPresentation.EveryDay; RefreshControls(); }
+    private void OnSnoozeToggled(object? sender, ToggledEventArgs e) => SnoozeMinutesEntry.IsEnabled = e.Value;
+
+    private async void OnSoundClicked(object? sender, EventArgs e)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var choice = await DisplayActionSheetAsync("Alarm sound", "Cancel", null,
+                "System default", "Choose system sound", "Choose WAV or MP3 file");
+            if (choice == "System default")
+                _soundUri = null;
+            else if (choice == "Choose WAV or MP3 file")
+                _soundUri = await AlarmSoundPicker.ImportFileAsync() ?? _soundUri;
+            else if (choice == "Choose system sound")
+            {
+                var sounds = await Task.Run(AlarmSoundPicker.GetSystemSounds);
+                if (sounds.Count == 0)
+                    throw new InvalidOperationException("No system alarm sounds are available.");
+                var selected = await DisplayActionSheetAsync("System alarm sounds", "Cancel", null,
+                    sounds.Select(sound => sound.Title).ToArray());
+                var match = sounds.FirstOrDefault(sound => sound.Title == selected);
+                if (match.Uri is not null) _soundUri = match.Uri;
+            }
+            RefreshControls();
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Unable to select alarm sound", ex.Message, "OK");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private async void OnSaveClicked(object? sender, EventArgs e)
     {
@@ -146,6 +195,17 @@ public partial class AlarmEditPage : ContentPage
         {
             await DisplayAlertAsync("Choose days", "Select at least one day for a repeating alarm.", "OK");
             return;
+        }
+        int? snoozeMinutes = null;
+        if (SnoozeSwitch.IsToggled)
+        {
+            if (!int.TryParse(SnoozeMinutesEntry.Text, NumberStyles.None, CultureInfo.InvariantCulture, out var minutes) ||
+                minutes is < 1 or > 1440)
+            {
+                await DisplayAlertAsync("Invalid snooze", "Enter a snooze interval from 1 to 1440 minutes.", "OK");
+                return;
+            }
+            snoozeMinutes = minutes;
         }
 
         _busy = true;
@@ -174,6 +234,9 @@ public partial class AlarmEditPage : ContentPage
                     ? AlarmPresentation.NextOnceDate(_hour, _minute)
                     : _original.OnceDate;
             updated.SkipDate = changedSchedule || !_isRepeating ? null : _original.SkipDate;
+            updated.SoundUri = _soundUri;
+            updated.Volume = Math.Round(VolumeSlider.Value) / 100;
+            updated.SnoozeMinutes = snoozeMinutes;
 
             if (_isNew)
             {
@@ -188,6 +251,11 @@ public partial class AlarmEditPage : ContentPage
         catch (AlarmConflictException ex)
         {
             await DisplayAlertAsync("Alarm changed", ex.Message, "OK");
+        }
+        catch (AlarmScheduleException ex)
+        {
+            await DisplayAlertAsync("Alarm saved; scheduling uncertain", ex.Message, "OK");
+            await Navigation.PopAsync();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
@@ -214,6 +282,11 @@ public partial class AlarmEditPage : ContentPage
         catch (AlarmConflictException ex)
         {
             await DisplayAlertAsync("Alarm changed", ex.Message, "OK");
+        }
+        catch (AlarmScheduleException ex)
+        {
+            await DisplayAlertAsync("Alarm deleted; scheduling uncertain", ex.Message, "OK");
+            await Navigation.PopAsync();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {

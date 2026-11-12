@@ -171,6 +171,32 @@ public sealed class AlarmRegistrationRepositoryTests : IDisposable
         await Assert.ThrowsAsync<InvalidDataException>(() => repository.SaveAsync(new[] { entry }));
     }
 
+    [Fact]
+    public async Task LinkedSnoozeRequiresOneCompletedSourceAndUniqueLink()
+    {
+        var repository = new AlarmRegistrationRepository(PathName);
+        var source = Entry(Guid.NewGuid(), AlarmRegistrationState.PlaybackStarted);
+        source.ObservedAt = source.TriggerAt;
+        source.PlaybackReservedAt = source.TriggerAt;
+        source.PlaybackStartedAt = source.TriggerAt;
+        var snooze = Entry(source.AlarmId, AlarmRegistrationState.Desired, AlarmRegistrationKind.Snooze);
+        snooze.TriggerAt = source.TriggerAt.AddMinutes(10);
+        snooze.SnoozedFromRegistrationId = source.RegistrationId;
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.SaveAsync(new[] { source, snooze }));
+        source.State = AlarmRegistrationState.PlaybackCompleted;
+        await repository.SaveAsync(new[] { source, snooze });
+        snooze.TriggerAt = source.PlaybackStartedAt!.Value;
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.SaveAsync(new[] { source, snooze }));
+        snooze.TriggerAt = source.TriggerAt.AddMinutes(10);
+        var duplicate = Entry(source.AlarmId, AlarmRegistrationState.Desired, AlarmRegistrationKind.Snooze);
+        duplicate.SnoozedFromRegistrationId = source.RegistrationId;
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.SaveAsync(new[] { source, snooze, duplicate }));
+        snooze.SnoozedFromRegistrationId = Guid.NewGuid();
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.SaveAsync(new[] { source, snooze }));
+        snooze.SnoozedFromRegistrationId = Guid.Empty;
+        await Assert.ThrowsAsync<InvalidDataException>(() => repository.SaveAsync(new[] { source, snooze }));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

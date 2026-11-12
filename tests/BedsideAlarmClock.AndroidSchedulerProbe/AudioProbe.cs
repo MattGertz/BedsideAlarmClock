@@ -17,11 +17,12 @@ internal static class AudioProbe
     public const string FocusModeKey = "focus_mode";
     public const string NoFocus = "no_focus";
     public const string BestEffort = "best_effort";
+    public const string Component = "component";
 
     public static void Schedule(Context context, string focusMode)
     {
-        if (focusMode is not (NoFocus or BestEffort))
-            throw new ArgumentException("Expected no_focus or best_effort.", nameof(focusMode));
+        if (focusMode is not (NoFocus or BestEffort or Component))
+            throw new ArgumentException("Expected no_focus, best_effort or component.", nameof(focusMode));
         var scheduler = new AndroidAlarmScheduler(context, typeof(AudioProbeReceiver), typeof(MainActivity));
         var registration = new AlarmRegistration(
             Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
@@ -55,7 +56,7 @@ public sealed class AudioProbeReceiver : BroadcastReceiver
         var focusMode = state?.GetString(AudioProbe.FocusModeKey, null);
         var callback = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         Log.Info(AudioProbe.Tag, $"callback_ms={callback} scheduled_ms={trigger} focus_mode={focusMode}");
-        if (trigger == 0 || focusMode is not (AudioProbe.NoFocus or AudioProbe.BestEffort))
+        if (trigger == 0 || focusMode is not (AudioProbe.NoFocus or AudioProbe.BestEffort or AudioProbe.Component))
         {
             Log.Error(AudioProbe.Tag, "ERROR missing or invalid audio probe state");
             return;
@@ -86,6 +87,7 @@ public sealed class AudioProbeService : Service, AudioManager.IOnAudioFocusChang
     private AudioManager? audioManager;
     private AudioAttributes? attributes;
     private AudioFocusRequestClass? focusRequest;
+    private AndroidAlarmSoundPlayer? componentPlayer;
     private Handler? handler;
     private bool focusGranted;
     private bool started;
@@ -132,6 +134,12 @@ public sealed class AudioProbeService : Service, AudioManager.IOnAudioFocusChang
                 ?? throw new InvalidOperationException("Audio attributes could not be built.");
             Log.Info(AudioProbe.Tag, $"attributes usage={attributes.Usage} content={attributes.ContentType} alarm_volume={audioManager.GetStreamVolume(Android.Media.Stream.Alarm)}");
             var mode = intent?.GetStringExtra(AudioProbe.FocusModeKey);
+            if (mode == AudioProbe.Component)
+            {
+                Log.Info(AudioProbe.Tag, "focus=not_requested mode=component");
+                _ = RunComponentAsync();
+                return StartCommandResult.NotSticky;
+            }
             if (mode == AudioProbe.NoFocus)
                 Log.Info(AudioProbe.Tag, "focus=not_requested mode=no_focus");
             else if (mode == AudioProbe.BestEffort)
@@ -164,6 +172,68 @@ public sealed class AudioProbeService : Service, AudioManager.IOnAudioFocusChang
             StopSelf();
         }
         return StartCommandResult.NotSticky;
+    }
+
+    private async Task RunComponentAsync()
+    {
+        try
+        {
+            componentPlayer = new AndroidAlarmSoundPlayer(this,
+                error => Log.Error(AudioProbe.Tag, $"ERROR component playback: {error}"));
+            await componentPlayer.Prepared;
+            try
+            {
+                await componentPlayer.StartAsync(() => throw new InvalidOperationException("Rejected for test."));
+                throw new InvalidOperationException("The rejected component start succeeded.");
+            }
+            catch (InvalidOperationException ex) when (ex.Message == "Rejected for test.")
+            {
+                Log.Info(AudioProbe.Tag, "component_rejected_start");
+            }
+            await componentPlayer.StartAsync(() => { });
+            var last = await componentPlayer.GetPositionAsync();
+            var advances = 0;
+            for (var i = 0; i < 10; i++)
+            {
+                await Task.Delay(250);
+                var position = await componentPlayer.GetPositionAsync();
+                if (position > last)
+                    advances++;
+                last = position;
+                Log.Info(AudioProbe.Tag, $"component_position_ms={position} advances={advances}");
+            }
+            await componentPlayer.ReleaseAsync();
+            await componentPlayer.ReleaseAsync();
+            try
+            {
+                await componentPlayer.StartAsync(() => { });
+                throw new InvalidOperationException("The released component restarted.");
+            }
+            catch (ObjectDisposedException)
+            {
+                Log.Info(AudioProbe.Tag, "component_released_start_rejected");
+            }
+            Log.Info(AudioProbe.Tag, advances > 0 ? "AUDIO_COMPONENT_PASS" : "ERROR component position did not advance");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(AudioProbe.Tag, $"ERROR component player: {ex}");
+        }
+        finally
+        {
+            if (componentPlayer is not null)
+            {
+                try
+                {
+                    await componentPlayer.ReleaseAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(AudioProbe.Tag, $"ERROR component release: {ex}");
+                }
+            }
+            StopSelf();
+        }
     }
 
     private void StartPlayer()
@@ -251,6 +321,8 @@ public sealed class AudioProbeService : Service, AudioManager.IOnAudioFocusChang
     public override void OnDestroy()
     {
         handler?.RemoveCallbacksAndMessages(null);
+        if (componentPlayer is not null)
+            _ = ReleaseComponentAsync(componentPlayer);
         if (player is not null)
         {
             player.Release();
@@ -264,5 +336,17 @@ public sealed class AudioProbeService : Service, AudioManager.IOnAudioFocusChang
         handler?.Dispose();
         Log.Info(AudioProbe.Tag, "service_stopped");
         base.OnDestroy();
+    }
+
+    private static async Task ReleaseComponentAsync(AndroidAlarmSoundPlayer component)
+    {
+        try
+        {
+            await component.ReleaseAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(AudioProbe.Tag, $"ERROR component release during service shutdown: {ex}");
+        }
     }
 }

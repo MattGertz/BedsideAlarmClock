@@ -42,6 +42,11 @@ internal sealed class AndroidAlarmScheduler : IAlarmRegistrationScheduler
             throw new ArgumentOutOfRangeException(nameof(triggerAt), "An alarm must be scheduled in the future.");
         if (!CanScheduleExactAlarms())
             throw new InvalidOperationException("Android does not allow this app to schedule exact alarms.");
+#if ALARM_DELIVERY_EXPERIMENT
+        if (AndroidAlarmClockAnchor.ReadStatus(context) != RecoveryClockStatus.Trusted)
+            throw new InvalidOperationException("The device clock changed or restarted; open the app to recover alarms.");
+        AndroidAlarmClockAnchor.MarkScheduled(context);
+#endif
 
         using var operation = CreateDeliveryIntent(registration, PendingIntentFlags.UpdateCurrent)
             ?? throw new InvalidOperationException("Android could not create the alarm delivery intent.");

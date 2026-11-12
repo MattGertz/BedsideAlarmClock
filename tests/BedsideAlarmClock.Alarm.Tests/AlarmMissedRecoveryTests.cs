@@ -41,7 +41,7 @@ public sealed class AlarmMissedRecoveryTests : IDisposable
             await coordinator.RecordMissedRegularAsync(store, registration, decisionAt, false, TimeZoneInfo.Utc));
         Assert.Equal(MissedAlarmRecordResult.AlreadyRecorded,
             await coordinator.RecordMissedRegularAsync(store, registration, decisionAt.AddMinutes(1), false, TimeZoneInfo.Utc));
-        Assert.Equal(RegularDeliveryRecordResult.Stale,
+        Assert.Equal(DeliveryRecordResult.Stale,
             await coordinator.RecordRegularDeliveryAsync(store, registration, decisionAt, TimeZoneInfo.Utc));
         var missed = Assert.Single(await store.LoadExistingAsync());
         Assert.Equal(MissedAlarmReason.DeadlineExceeded, missed.MissedReason);
@@ -61,6 +61,61 @@ public sealed class AlarmMissedRecoveryTests : IDisposable
         Assert.Equal(DateTimeOffset.Parse("2025-01-13T07:30:00Z"), next.TriggerAt);
         Assert.NotEqual(registration, next.Registration);
         Assert.Equal(next.Registration, Assert.Single(scheduler.Registered).Key);
+    }
+
+    [Fact]
+    public async Task InactiveObservedDeliveryIsReportedInterruptedWithoutRestartingIt()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var now = Trigger.AddMinutes(1);
+        var active = await coordinator.RecoverInactiveAsync(store, now, TimeZoneInfo.Utc, item => item == registration);
+        Assert.Empty(active.Interrupted);
+        Assert.Equal(AlarmRegistrationState.DeliveryObserved, Assert.Single(await store.LoadExistingAsync()).State);
+
+        var recovered = await coordinator.RecoverInactiveAsync(store, now, TimeZoneInfo.Utc, _ => false);
+        Assert.Equal(registration, Assert.Single(recovered.Interrupted));
+        var interrupted = Assert.Single(await store.LoadExistingAsync());
+        Assert.Equal(AlarmRegistrationState.Interrupted, interrupted.State);
+        Assert.Equal(now, interrupted.InterruptedAt);
+        Assert.Null(interrupted.PlaybackStartedAt);
+
+        var scheduler = new TestScheduler();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, new FixedTimeProvider(now));
+        await coordinator.ReconcileAllAsync(reconciler, TimeZoneInfo.Utc);
+        var journal = await store.LoadExistingAsync();
+        Assert.False(Assert.Single(journal, item => item.State == AlarmRegistrationState.Interrupted).CancellationPending);
+        Assert.Equal(Trigger.AddDays(7), Assert.Single(scheduler.Registered).Value);
+    }
+
+    [Fact]
+    public async Task InactiveRecoveryKeepsGraceWindowAndMarksLateUnobservedAlarmMissed()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        var within = await coordinator.RecoverInactiveAsync(store, Trigger.AddSeconds(30), TimeZoneInfo.Utc, _ => false);
+        Assert.Equal(registration, Assert.Single(within.AwaitingDelivery));
+        Assert.Equal(AlarmRegistrationState.Desired, Assert.Single(await store.LoadExistingAsync()).State);
+
+        var late = await coordinator.RecoverInactiveAsync(store, Trigger.AddSeconds(30).AddTicks(1), TimeZoneInfo.Utc, _ => false);
+        Assert.Equal(registration, Assert.Single(late.Missed));
+        Assert.Equal(AlarmRegistrationState.Missed, Assert.Single(await store.LoadExistingAsync()).State);
+    }
+
+    [Fact]
+    public async Task UncertainClockDoesNotClaimThatAlarmWasMissed()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger.AddSeconds(5), TimeZoneInfo.Utc);
+        var now = Trigger.AddSeconds(1);
+        var result = await coordinator.RecoverInactiveAsync(store, now, TimeZoneInfo.Utc, _ => false,
+            RecoveryClockStatus.Uncertain);
+        Assert.Empty(result.Missed);
+        Assert.Equal(registration, Assert.Single(result.ClockUncertain));
+        var uncertain = Assert.Single(await store.LoadExistingAsync());
+        Assert.Equal(AlarmRegistrationState.ClockUncertain, uncertain.State);
+        Assert.Equal(Trigger.AddSeconds(5), uncertain.ObservedAt);
+        Assert.Null(uncertain.MissedAt);
+        Assert.Equal(now, uncertain.ClockUncertainAt);
     }
 
     [Fact]

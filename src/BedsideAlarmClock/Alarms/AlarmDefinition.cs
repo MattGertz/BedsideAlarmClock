@@ -35,6 +35,9 @@ public sealed class AlarmDefinition
     public DateOnly? OnceDate { get; set; }
     [JsonRequired]
     public DateOnly? SkipDate { get; set; }
+    public string? SoundUri { get; set; }
+    public double Volume { get; set; } = 1;
+    public int? SnoozeMinutes { get; set; } = 10;
 
     public void Validate()
     {
@@ -43,6 +46,14 @@ public sealed class AlarmDefinition
         ValidateTime(Hour, Minute);
         if (Label is null)
             throw new InvalidDataException("An alarm label cannot be null.");
+        if (SoundUri is not null &&
+            (!Uri.TryCreate(SoundUri, UriKind.Absolute, out var sound) ||
+             sound.Scheme is not ("content" or "file")))
+            throw new InvalidDataException("An alarm sound must be a content or local file URI.");
+        if (!double.IsFinite(Volume) || Volume is < 0 or > 1)
+            throw new InvalidDataException("Alarm volume must be between 0 and 1.");
+        if (SnoozeMinutes is < 1 or > 1440)
+            throw new InvalidDataException("Snooze must be between 1 and 1440 minutes, or disabled.");
         const AlarmDays allDays = (AlarmDays)127;
         if ((Days & ~allDays) != 0)
             throw new InvalidDataException("An alarm has unknown day flags.");

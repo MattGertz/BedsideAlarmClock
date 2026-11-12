@@ -11,6 +11,9 @@ public partial class AlarmListPage : ContentPage
     private (DateOnly Date, string Status) _displayState;
     private bool _busy;
     private bool _loaded;
+#if ALARM_DELIVERY_EXPERIMENT
+    private IReadOnlyList<AlarmRegistrationEntry> _reports = [];
+#endif
 
     public AlarmListPage()
     {
@@ -24,6 +27,32 @@ public partial class AlarmListPage : ContentPage
             if (_loaded && !_busy && DisplayState() != _displayState) Render();
         };
         AddButton.IsEnabled = false;
+#if ALARM_DELIVERY_EXPERIMENT
+        DeliveryStatus.Text = "Experimental alarm delivery: keep a backup alarm.";
+        ActiveControlsButton.IsVisible = true;
+#endif
+    }
+
+    private async void OnActiveControlsClicked(object? sender, EventArgs e)
+    {
+#if ALARM_DELIVERY_EXPERIMENT
+        if (Platforms.Android.AlarmPlaybackService.Current?.GetActiveAlarms().Count > 0)
+        {
+            try
+            {
+                var context = global::Android.App.Application.Context;
+                using var intent = new global::Android.Content.Intent(context, typeof(Platforms.Android.AlarmRingingActivity));
+                intent.AddFlags(global::Android.Content.ActivityFlags.NewTask);
+                context.StartActivity(intent);
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlertAsync("Unable to open alarm controls", ex.Message, "OK");
+            }
+            return;
+        }
+#endif
+        await DisplayAlertAsync("Active alarms", "There are no active alarms.", "OK");
     }
 
     protected override async void OnAppearing()
@@ -46,6 +75,10 @@ public partial class AlarmListPage : ContentPage
         try
         {
             _alarms = await _coordinator.LoadAsync();
+#if ALARM_DELIVERY_EXPERIMENT
+            _reports = await _coordinator.LoadRecoveryReportsAsync(
+                IPlatformApplication.Current!.Services.GetRequiredService<AlarmRegistrationRepository>());
+#endif
             _loaded = true;
             Render();
         }
@@ -78,6 +111,34 @@ public partial class AlarmListPage : ContentPage
     {
         _displayState = DisplayState();
         AlarmRows.Children.Clear();
+#if ALARM_DELIVERY_EXPERIMENT
+        foreach (var report in _reports.Where(item =>
+            !Preferences.Default.Get($"alarm.report.{item.RegistrationId:N}", false)))
+        {
+            var name = _alarms.SingleOrDefault(alarm => alarm.Id == report.AlarmId)?.Label;
+            var state = report.State switch
+            {
+                AlarmRegistrationState.Missed => "Missed",
+                AlarmRegistrationState.Interrupted => "Interrupted",
+                _ => "Time uncertain"
+            };
+            var row = new VerticalStackLayout { Spacing = 2, Padding = 8 };
+            row.Children.Add(new Label
+            {
+                Text = $"{state}: {report.TriggerAt.ToLocalTime():g}" +
+                    (string.IsNullOrWhiteSpace(name) ? "" : $" · {name}"),
+                TextColor = Color.FromArgb("#FFD180"), FontSize = 15
+            });
+            var acknowledge = new Button { Text = "Acknowledge", HorizontalOptions = LayoutOptions.Start };
+            acknowledge.Clicked += (_, _) =>
+            {
+                Preferences.Default.Set($"alarm.report.{report.RegistrationId:N}", true);
+                Render();
+            };
+            row.Children.Add(acknowledge);
+            AlarmRows.Children.Add(row);
+        }
+#endif
         if (_alarms.Count == 0)
         {
             AlarmRows.Children.Add(new Label
@@ -211,6 +272,11 @@ public partial class AlarmListPage : ContentPage
         {
             reload = true;
             await DisplayAlertAsync("Alarm changed", ex.Message, "OK");
+        }
+        catch (AlarmScheduleException ex)
+        {
+            reload = true;
+            await DisplayAlertAsync("Alarm saved; scheduling uncertain", ex.Message, "OK");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {

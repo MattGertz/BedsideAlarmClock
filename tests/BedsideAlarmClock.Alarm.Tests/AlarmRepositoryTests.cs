@@ -55,6 +55,44 @@ public sealed class AlarmRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task SoundVolumeAndSnoozeRoundTripAndLegacyDefaults()
+    {
+        var repository = new AlarmRepository(PathName);
+        var alarm = Once();
+        alarm.SoundUri = "content://media/internal/audio/media/42";
+        alarm.Volume = 0.35;
+        alarm.SnoozeMinutes = null;
+        await repository.SaveAsync(new[] { alarm });
+        var saved = Assert.Single(await repository.LoadAsync());
+        Assert.Equal(alarm.SoundUri, saved.SoundUri);
+        Assert.Equal(0.35, saved.Volume);
+        Assert.Null(saved.SnoozeMinutes);
+
+        await File.WriteAllTextAsync(PathName,
+            $$"""{"Version":1,"Alarms":[{"Id":"{{alarm.Id}}","Hour":7,"Minute":30,"Enabled":true,"IsRepeating":false,"Days":0,"Label":"","OnceDate":"2025-01-02","SkipDate":null}]}""");
+        var legacy = Assert.Single(await repository.LoadAsync());
+        Assert.Null(legacy.SoundUri);
+        Assert.Equal(1, legacy.Volume);
+        Assert.Equal(10, legacy.SnoozeMinutes);
+    }
+
+    [Fact]
+    public void InvalidSoundVolumeAndSnoozeAreRejected()
+    {
+        var alarm = Once();
+        alarm.SoundUri = "https://example.com/alarm.mp3";
+        Assert.Throws<InvalidDataException>(alarm.Validate);
+        alarm.SoundUri = "file:///data/user/0/app/sound.wav";
+        alarm.Volume = double.NaN;
+        Assert.Throws<InvalidDataException>(alarm.Validate);
+        alarm.Volume = 1;
+        alarm.SnoozeMinutes = 0;
+        Assert.Throws<InvalidDataException>(alarm.Validate);
+        alarm.SnoozeMinutes = 1441;
+        Assert.Throws<InvalidDataException>(alarm.Validate);
+    }
+
+    [Fact]
     public async Task StorageFailuresArePropagatedAndTemporaryFilesRemoved()
     {
         var target = Path.Combine(directory, "destination");
