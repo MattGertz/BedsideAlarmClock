@@ -101,6 +101,38 @@ public sealed class AlarmMissedRecoveryTests : IDisposable
         Assert.Equal(AlarmRegistrationState.Missed, Assert.Single(await store.LoadExistingAsync()).State);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RecoveryDoesNotMarkAnActiveUnobservedDeliveryMissed(bool clockTrusted)
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        var result = await coordinator.RecoverInactiveAsync(store, Trigger.AddMinutes(1), TimeZoneInfo.Utc,
+            item => item == registration, clockTrusted ? RecoveryClockStatus.Trusted : RecoveryClockStatus.Uncertain);
+        Assert.Empty(result.Missed);
+        Assert.Empty(result.ClockUncertain);
+        Assert.Equal(AlarmRegistrationState.Desired, Assert.Single(await store.LoadExistingAsync()).State);
+    }
+
+    [Fact]
+    public async Task ClockChangeRecoveryLeavesAlreadyPlayingAlarmAlone()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        var time = new FixedTimeProvider(Trigger.AddSeconds(1));
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, time, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false);
+        Assert.Equal(PlaybackStartResult.Started,
+            await coordinator.StartReservedRegularPlaybackAsync(store, registration, time, TimeZoneInfo.Utc,
+                RecoveryClockStatus.Trusted, false, () => { }));
+
+        var result = await coordinator.RecoverInactiveAsync(store, Trigger.AddMinutes(-1), TimeZoneInfo.Utc,
+            item => item == registration, RecoveryClockStatus.Uncertain);
+        Assert.Empty(result.ClockUncertain);
+        Assert.Empty(result.Interrupted);
+        Assert.Equal(AlarmRegistrationState.PlaybackStarted, Assert.Single(await store.LoadExistingAsync()).State);
+    }
+
     [Fact]
     public async Task UncertainClockDoesNotClaimThatAlarmWasMissed()
     {
@@ -116,6 +148,54 @@ public sealed class AlarmMissedRecoveryTests : IDisposable
         Assert.Equal(Trigger.AddSeconds(5), uncertain.ObservedAt);
         Assert.Null(uncertain.MissedAt);
         Assert.Equal(now, uncertain.ClockUncertainAt);
+    }
+
+    [Fact]
+    public async Task ClockChangeDuringReservedDeliveryCannotBeHiddenByRecovery()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        var barrier = new AlarmRecoveryBarrier();
+        var clockStatus = RecoveryClockStatus.Trusted;
+        var time = new FixedTimeProvider(Trigger.AddSeconds(1));
+        Assert.True(await barrier.BeginDeliveryAsync(() => true));
+        Assert.Equal(DeliveryRecordResult.Recorded,
+            await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc));
+        Assert.Equal(PlaybackReservationResult.Reserved,
+            await coordinator.ReserveRegularPlaybackAsync(store, registration, time, TimeZoneInfo.Utc,
+                clockStatus, false));
+
+        clockStatus = RecoveryClockStatus.Uncertain;
+        async Task Recover()
+        {
+            await coordinator.RecoverInactiveAsync(store, Trigger.AddSeconds(1), TimeZoneInfo.Utc,
+                _ => false, clockStatus);
+            clockStatus = RecoveryClockStatus.Trusted;
+        }
+        Assert.False(await barrier.RecoverAsync(Recover));
+        var started = false;
+        Assert.Equal(PlaybackStartResult.ClockUncertain,
+            await coordinator.StartReservedRegularPlaybackAsync(store, registration, time, TimeZoneInfo.Utc,
+                clockStatus, false, () => started = true));
+        Assert.False(started);
+        await barrier.FinishDeliveryAsync(Recover);
+
+        Assert.Equal(RecoveryClockStatus.Trusted, clockStatus);
+        Assert.Equal(AlarmRegistrationState.ClockUncertain, Assert.Single(await store.LoadExistingAsync()).State);
+    }
+
+    [Fact]
+    public async Task FailedReservedDeliveryIsRetriedAfterGraceWithoutStartingAgain()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, new FixedTimeProvider(Trigger.AddSeconds(1)),
+            TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+
+        var first = await coordinator.RecoverInactiveAsync(store, Trigger.AddSeconds(2), TimeZoneInfo.Utc, _ => false);
+        Assert.Equal(registration, Assert.Single(first.AwaitingDelivery));
+        var retry = await coordinator.RecoverInactiveAsync(store, Trigger.AddSeconds(31), TimeZoneInfo.Utc, _ => false);
+        Assert.Equal(registration, Assert.Single(retry.Interrupted));
+        Assert.Equal(AlarmRegistrationState.Interrupted, Assert.Single(await store.LoadExistingAsync()).State);
     }
 
     [Fact]

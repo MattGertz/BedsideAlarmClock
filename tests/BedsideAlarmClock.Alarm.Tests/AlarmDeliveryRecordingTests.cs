@@ -690,7 +690,7 @@ public sealed class AlarmDeliveryRecordingTests : IDisposable
     }
 
     [Fact]
-    public async Task SnoozeRetryKeepsIdentityWhenSchedulerThrowsAfterRegistering()
+    public async Task FailedSnoozeIsCanceledAndRetryKeepsItsIdentity()
     {
         var (coordinator, store, _, registration) = await SetupAsync();
         await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
@@ -702,15 +702,185 @@ public sealed class AlarmDeliveryRecordingTests : IDisposable
         var scheduler = new TestScheduler { FailAfterSchedule = true };
         await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.SnoozeStartedRegularPlaybackAsync(
             store, scheduler, registration, clock, TimeZoneInfo.Utc));
-        var registered = Assert.Single(scheduler.Registered);
+        Assert.Empty(scheduler.Registered);
+        var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+        Assert.Equal(AlarmRegistrationState.SnoozeUnconfirmed, snooze.State);
         scheduler.FailAfterSchedule = false;
         Assert.Equal(SnoozeResult.Rescheduled, await coordinator.SnoozeStartedRegularPlaybackAsync(
             store, scheduler, registration, clock, TimeZoneInfo.Utc));
-        Assert.Equal(registered, Assert.Single(scheduler.Registered));
+        Assert.Equal(snooze.Registration, Assert.Single(scheduler.Registered).Key);
     }
 
     [Fact]
-    public async Task DismissAndSnoozeCannotBothCreateNewOutcomes()
+    public async Task UnconfirmedSnoozeIsNeverDeliveredOrRescheduledByReconciliation()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var clock = new MutableTimeProvider { Now = Trigger.AddSeconds(1) };
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        var scheduler = new TestScheduler { FailAfterSchedule = true, FailCancel = true };
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            coordinator.SnoozeStartedRegularPlaybackAsync(store, scheduler, registration, clock, TimeZoneInfo.Utc));
+        var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+        Assert.Equal(DeliveryRecordResult.Stale,
+            await coordinator.RecordSnoozeDeliveryAsync(store, snooze.Registration, snooze.TriggerAt, TimeZoneInfo.Utc));
+
+        scheduler.FailCancel = false;
+        scheduler.FailAfterSchedule = false;
+        await coordinator.ReconcileAllAsync(new AlarmRegistrationReconciler(store, scheduler, clock), TimeZoneInfo.Utc);
+        Assert.DoesNotContain(snooze.Registration, scheduler.Registered.Keys);
+        Assert.Equal(AlarmRegistrationState.SnoozeUnconfirmed,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze.Registration).State);
+
+        clock.Now = snooze.TriggerAt.AddMinutes(1);
+        Assert.Equal(SnoozeResult.Rescheduled, await coordinator.SnoozeStartedRegularPlaybackAsync(
+            store, scheduler, registration, clock, TimeZoneInfo.Utc));
+        Assert.Equal(clock.Now.AddMinutes(10), scheduler.Registered[snooze.Registration]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SnoozeConfirmationWriteFailureUsesPersistedState(bool failAfterWrite)
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var clock = new FixedTimeProvider(Trigger.AddSeconds(1));
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        var failing = new FailingSaveStore(store, failAfterWrite, failOnCall: 2);
+        var scheduler = new TestScheduler();
+
+        if (failAfterWrite)
+        {
+            Assert.Equal(SnoozeResult.Scheduled, await coordinator.SnoozeStartedRegularPlaybackAsync(
+                failing, scheduler, registration, clock, TimeZoneInfo.Utc));
+            Assert.Single(scheduler.Registered);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<IOException>(() => coordinator.SnoozeStartedRegularPlaybackAsync(
+                failing, scheduler, registration, clock, TimeZoneInfo.Utc));
+            Assert.Empty(scheduler.Registered);
+            var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+            Assert.Equal(AlarmRegistrationState.SnoozeUnconfirmed, snooze.State);
+            Assert.Equal(DeliveryRecordResult.Stale,
+                await coordinator.RecordSnoozeDeliveryAsync(store, snooze.Registration, snooze.TriggerAt, TimeZoneInfo.Utc));
+        }
+    }
+
+    [Fact]
+    public async Task UnreadableSnoozeConfirmationIsRevertedAndCanceled()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var clock = new FixedTimeProvider(Trigger.AddSeconds(1));
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        var failing = new UnreadableConfirmationStore(store);
+        var scheduler = new TestScheduler();
+
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            coordinator.SnoozeStartedRegularPlaybackAsync(failing, scheduler, registration, clock, TimeZoneInfo.Utc));
+        Assert.Empty(scheduler.Registered);
+        var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+        Assert.Equal(AlarmRegistrationState.SnoozeUnconfirmed, snooze.State);
+        Assert.Equal(DeliveryRecordResult.Stale,
+            await coordinator.RecordSnoozeDeliveryAsync(store, snooze.Registration, snooze.TriggerAt, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public async Task DismissAfterUncertainSnoozeCancelsItsIdentityAndRejectsLateDelivery()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var clock = new FixedTimeProvider(Trigger.AddSeconds(1));
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        var scheduler = new TestScheduler { FailAfterSchedule = true, FailCancel = true };
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            coordinator.SnoozeStartedRegularPlaybackAsync(store, scheduler, registration, clock, TimeZoneInfo.Utc));
+        var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+        Assert.Single(scheduler.Registered);
+        scheduler.FailCancel = false;
+
+        Assert.Equal(PlaybackCompletionResult.AlreadyCompleted,
+            await coordinator.DismissStartedPlaybackAsync(store, scheduler, registration, TimeZoneInfo.Utc));
+        Assert.Empty(scheduler.Registered);
+        Assert.Equal(AlarmRegistrationState.PendingCancellation,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze.Registration).State);
+        Assert.Equal(DeliveryRecordResult.Stale,
+            await coordinator.RecordSnoozeDeliveryAsync(store, snooze.Registration, snooze.TriggerAt, TimeZoneInfo.Utc));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.SnoozeStartedRegularPlaybackAsync(store, scheduler, registration, clock, TimeZoneInfo.Utc));
+
+        await coordinator.ReconcileAllAsync(new AlarmRegistrationReconciler(store, scheduler, clock), TimeZoneInfo.Utc);
+        Assert.DoesNotContain(await store.LoadExistingAsync(), item => item.Registration == snooze.Registration);
+    }
+
+    [Fact]
+    public async Task FailedSnoozeCancellationRemainsStaleAndCanBeRetried()
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var clock = new FixedTimeProvider(Trigger.AddSeconds(1));
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        var scheduler = new TestScheduler { FailAfterSchedule = true, FailCancel = true };
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            coordinator.SnoozeStartedRegularPlaybackAsync(store, scheduler, registration, clock, TimeZoneInfo.Utc));
+        var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+        scheduler.FailCancel = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.DismissStartedPlaybackAsync(store, scheduler, registration, TimeZoneInfo.Utc));
+        Assert.Equal(AlarmRegistrationState.PendingCancellation,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze.Registration).State);
+        Assert.Equal(DeliveryRecordResult.Stale,
+            await coordinator.RecordSnoozeDeliveryAsync(store, snooze.Registration, snooze.TriggerAt, TimeZoneInfo.Utc));
+
+        scheduler.FailCancel = false;
+        Assert.Equal(PlaybackCompletionResult.AlreadyCompleted,
+            await coordinator.DismissStartedPlaybackAsync(store, scheduler, registration, TimeZoneInfo.Utc));
+        Assert.Empty(scheduler.Registered);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DismissalRetriesAfterUncertainSnoozeCancellationWrite(bool failAfterWrite)
+    {
+        var (coordinator, store, _, registration) = await SetupAsync();
+        await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
+        var clock = new FixedTimeProvider(Trigger.AddSeconds(1));
+        await coordinator.ReserveRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedRegularPlaybackAsync(store, registration, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        var scheduler = new TestScheduler { FailAfterSchedule = true, FailCancel = true };
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            coordinator.SnoozeStartedRegularPlaybackAsync(store, scheduler, registration, clock, TimeZoneInfo.Utc));
+        var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
+        scheduler.FailCancel = false;
+        var failing = new FailingSaveStore(store, failAfterWrite);
+        await Assert.ThrowsAsync<IOException>(() =>
+            coordinator.DismissStartedPlaybackAsync(failing, scheduler, registration, TimeZoneInfo.Utc));
+        Assert.Equal(failAfterWrite ? AlarmRegistrationState.PendingCancellation : AlarmRegistrationState.SnoozeUnconfirmed,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze.Registration).State);
+
+        Assert.Equal(PlaybackCompletionResult.AlreadyCompleted,
+            await coordinator.DismissStartedPlaybackAsync(failing, scheduler, registration, TimeZoneInfo.Utc));
+        Assert.Empty(scheduler.Registered);
+        Assert.Equal(AlarmRegistrationState.PendingCancellation,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze.Registration).State);
+    }
+
+    [Fact]
+    public async Task SnoozeAndPlaybackCompletionAreSerialized()
     {
         var (coordinator, store, _, registration) = await SetupAsync();
         await coordinator.RecordRegularDeliveryAsync(store, registration, Trigger, TimeZoneInfo.Utc);
@@ -751,6 +921,30 @@ public sealed class AlarmDeliveryRecordingTests : IDisposable
         var snooze = Assert.Single(await store.LoadExistingAsync(), item => item.Kind == AlarmRegistrationKind.Snooze);
         clock.Now = snooze.TriggerAt;
         return (coordinator, store, snooze.Registration, clock, scheduler);
+    }
+
+    [Fact]
+    public async Task DismissingASnoozeCancelsOnlyItsUncertainFollowUp()
+    {
+        var (coordinator, store, snooze, clock, scheduler) = await SetupSnoozeAsync();
+        await coordinator.RecordSnoozeDeliveryAsync(store, snooze, clock.Now, TimeZoneInfo.Utc);
+        await coordinator.ReserveSnoozePlaybackAsync(store, snooze, clock, TimeZoneInfo.Utc, RecoveryClockStatus.Trusted, false);
+        await coordinator.StartReservedSnoozePlaybackAsync(store, snooze, clock, TimeZoneInfo.Utc,
+            RecoveryClockStatus.Trusted, false, () => { });
+        scheduler.FailAfterSchedule = true;
+        scheduler.FailCancel = true;
+        await Assert.ThrowsAsync<AggregateException>(() =>
+            coordinator.SnoozeStartedSnoozePlaybackAsync(store, scheduler, snooze, clock, TimeZoneInfo.Utc));
+        scheduler.FailCancel = false;
+        var next = Assert.Single(await store.LoadExistingAsync(),
+            item => item.SnoozedFromRegistrationId == snooze.RegistrationId);
+
+        Assert.Equal(PlaybackCompletionResult.AlreadyCompleted,
+            await coordinator.DismissStartedPlaybackAsync(store, scheduler, snooze, TimeZoneInfo.Utc));
+        Assert.False(scheduler.Registered.ContainsKey(next.Registration));
+        Assert.True(scheduler.Registered.ContainsKey(snooze));
+        Assert.Equal(AlarmRegistrationState.PendingCancellation,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == next.Registration).State);
     }
 
     [Fact]
@@ -932,22 +1126,39 @@ public sealed class AlarmDeliveryRecordingTests : IDisposable
         public Task SaveAsync(IReadOnlyList<AlarmRegistrationEntry> registrations) => inner.SaveAsync(registrations);
     }
 
-    private sealed class FailingSaveStore(IAlarmRegistrationStore inner, bool failAfterWrite) : IAlarmRegistrationStore
+    private sealed class FailingSaveStore(IAlarmRegistrationStore inner, bool failAfterWrite, int failOnCall = 1) : IAlarmRegistrationStore
     {
-        private bool fail = true;
+        private int saveCalls;
         public Task<IReadOnlyList<AlarmRegistrationEntry>> LoadAsync() => inner.LoadAsync();
         public Task<IReadOnlyList<AlarmRegistrationEntry>> LoadExistingAsync() => inner.LoadExistingAsync();
 
         public async Task SaveAsync(IReadOnlyList<AlarmRegistrationEntry> registrations)
         {
-            if (fail)
+            if (++saveCalls == failOnCall)
             {
-                fail = false;
                 if (failAfterWrite)
                     await inner.SaveAsync(registrations);
                 throw new IOException("Simulated journal failure.");
             }
             await inner.SaveAsync(registrations);
+        }
+    }
+
+    private sealed class UnreadableConfirmationStore(IAlarmRegistrationStore inner) : IAlarmRegistrationStore
+    {
+        private int loads;
+        private int saves;
+        public Task<IReadOnlyList<AlarmRegistrationEntry>> LoadAsync() => inner.LoadAsync();
+        public Task<IReadOnlyList<AlarmRegistrationEntry>> LoadExistingAsync()
+        {
+            if (++loads == 2) throw new IOException("Simulated read failure.");
+            return inner.LoadExistingAsync();
+        }
+
+        public async Task SaveAsync(IReadOnlyList<AlarmRegistrationEntry> registrations)
+        {
+            await inner.SaveAsync(registrations);
+            if (++saves == 2) throw new IOException("Simulated confirmation write failure.");
         }
     }
 

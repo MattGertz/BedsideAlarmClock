@@ -3,14 +3,15 @@ namespace BedsideAlarmClock.Display.Tests;
 public class DisplayMathTests
 {
     [Theory]
-    [InlineData(96, 720, 360, 48)]
-    [InlineData(48, 360, 720, 96)]
-    [InlineData(48, 360, 900, 96)]
-    [InlineData(96, 720, 720, 96)]
-    public void ClockFontSizeFitsReferenceAndRespectsMaximum(
-        double currentSize, double referenceWidth, double availableWidth, double expected)
+    [InlineData(96, 720, 120, 360, 240, 48)]
+    [InlineData(96, 720, 120, 1440, 360, 192)]
+    [InlineData(96, 720, 120, 1440, 180, 144)]
+    public void ClockFontSizeFitsReferenceWithinWidthAndHeight(
+        double currentSize, double referenceWidth, double referenceHeight,
+        double availableWidth, double availableHeight, double expected)
     {
-        Assert.Equal(expected, DisplayMath.FitFontSize(currentSize, referenceWidth, availableWidth, 96), 6);
+        Assert.Equal(expected, DisplayMath.FitFontSize(
+            currentSize, referenceWidth, referenceHeight, availableWidth, availableHeight), 6);
     }
 
     [Theory]

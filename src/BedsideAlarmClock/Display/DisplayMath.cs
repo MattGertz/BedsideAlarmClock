@@ -7,9 +7,10 @@ internal static class DisplayMath
     public const float DefaultBrightness = 0.2f;
     public const int PixelShiftDistance = 48;
 
-    public static double FitFontSize(double currentSize, double referenceWidth, double availableWidth, double maximumSize)
+    public static double FitFontSize(
+        double currentSize, double referenceWidth, double referenceHeight, double availableWidth, double availableHeight)
     {
-        return Math.Min(maximumSize, currentSize * availableWidth / referenceWidth);
+        return currentSize * Math.Min(availableWidth / referenceWidth, availableHeight / referenceHeight);
     }
 
     public static float BrightnessAfterSwipe(float initialBrightness, float verticalDistance, float screenHeight)

@@ -47,7 +47,8 @@ internal sealed class AlarmRegistrationReconciler(
         var entries = (await store.LoadAsync()).ToList();
         var changed = false;
         foreach (var entry in entries.Where(item =>
-            item.Kind == AlarmRegistrationKind.Snooze && item.State == AlarmRegistrationState.Desired))
+            item.Kind == AlarmRegistrationKind.Snooze &&
+            item.State is AlarmRegistrationState.Desired or AlarmRegistrationState.SnoozeUnconfirmed))
         {
             if (!alarms.Any(alarm => alarm.Id == entry.AlarmId))
             {
@@ -64,6 +65,10 @@ internal sealed class AlarmRegistrationReconciler(
                 throw new OverdueAlarmRegistrationException(entry.Registration);
             scheduler.Schedule(entry.Registration, entry.TriggerAt);
         }
+
+        foreach (var entry in entries.Where(item =>
+            item.Kind == AlarmRegistrationKind.Snooze && item.State == AlarmRegistrationState.SnoozeUnconfirmed))
+            scheduler.Cancel(entry.Registration);
 
         var cancellations = entries.Where(entry => entry.Kind == AlarmRegistrationKind.Snooze &&
             (entry.State == AlarmRegistrationState.PendingCancellation ||

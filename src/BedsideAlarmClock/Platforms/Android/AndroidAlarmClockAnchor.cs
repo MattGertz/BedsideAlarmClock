@@ -9,20 +9,25 @@ internal static class AndroidAlarmClockAnchor
 {
     private const string Name = "alarm-clock-anchor";
 
-    public static RecoveryClockStatus ReadStatus(Context context)
+    internal readonly record struct Sample(long Wall, long Elapsed, int Boot);
+
+    public static Sample Capture(Context context) =>
+        new(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), SystemClock.ElapsedRealtime(), GetBootCount(context));
+
+    public static RecoveryClockStatus ReadStatus(Context context) => ReadStatus(context, Capture(context));
+
+    public static RecoveryClockStatus ReadStatus(Context context, Sample sample)
     {
         using var state = context.GetSharedPreferences(Name, FileCreationMode.Private)
             ?? throw new InvalidOperationException("Alarm clock state is unavailable.");
         var savedWall = state.GetLong("wall", 0);
         var savedElapsed = state.GetLong("elapsed", -1);
         var savedBoot = state.GetInt("boot", -1);
-        var boot = GetBootCount(context);
-        var elapsed = SystemClock.ElapsedRealtime();
-        if (savedWall == 0 || savedElapsed < 0 || savedBoot < 0 || boot < 0 ||
-            savedBoot != boot || elapsed < savedElapsed)
+        if (savedWall == 0 || savedElapsed < 0 || savedBoot < 0 || sample.Boot < 0 ||
+            savedBoot != sample.Boot || sample.Elapsed < savedElapsed)
             return RecoveryClockStatus.Uncertain;
-        var wallDelta = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - savedWall;
-        return Math.Abs(wallDelta - (elapsed - savedElapsed)) <= 2000
+        var wallDelta = sample.Wall - savedWall;
+        return Math.Abs(wallDelta - (sample.Elapsed - savedElapsed)) <= 2000
             ? RecoveryClockStatus.Trusted : RecoveryClockStatus.Uncertain;
     }
 
@@ -33,16 +38,15 @@ internal static class AndroidAlarmClockAnchor
         return state.GetBoolean("scheduled", false);
     }
 
-    public static void SetAnchor(Context context)
+    public static void SetAnchor(Context context, Sample sample)
     {
-        var boot = GetBootCount(context);
-        if (boot < 0) throw new InvalidOperationException("Android boot count is unavailable.");
+        if (sample.Boot < 0) throw new InvalidOperationException("Android boot count is unavailable.");
         using var state = context.GetSharedPreferences(Name, FileCreationMode.Private)
             ?? throw new InvalidOperationException("Alarm clock state is unavailable.");
         using var editor = state.Edit() ?? throw new InvalidOperationException("Alarm clock state cannot be saved.");
-        editor.PutLong("wall", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        editor.PutLong("elapsed", SystemClock.ElapsedRealtime());
-        editor.PutInt("boot", boot);
+        editor.PutLong("wall", sample.Wall);
+        editor.PutLong("elapsed", sample.Elapsed);
+        editor.PutInt("boot", sample.Boot);
         if (!editor.Commit()) throw new IOException("Alarm clock state could not be saved.");
     }
 

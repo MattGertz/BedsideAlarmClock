@@ -57,10 +57,12 @@ public sealed class AlarmRingingActivity : Activity
         }
         var content = new LinearLayout(this) { Orientation = Orientation.Vertical };
         content.SetPadding(24, 24, 24, 24);
-        foreach (var (registration, label, snoozeMinutes) in alarms)
+        foreach (var (registration, label, snoozeMinutes, actionError) in alarms)
         {
             var title = new TextView(this) { Text = label, TextSize = 24 };
             content.AddView(title);
+            if (actionError is not null)
+                content.AddView(new TextView(this) { Text = actionError, TextSize = 16 });
             var dismiss = new global::Android.Widget.Button(this) { Text = "Dismiss" };
             dismiss.Click += (_, _) => SendAction(registration, AlarmPlaybackService.DismissAction);
             content.AddView(dismiss);

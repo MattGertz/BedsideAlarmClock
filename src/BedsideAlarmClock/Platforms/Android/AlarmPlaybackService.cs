@@ -86,12 +86,13 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
     private async Task DeliverAsync(AlarmRegistration registration, long receivedAtMilliseconds)
     {
         var alarm = new ActiveAlarm(Interlocked.Increment(ref nextNotificationId));
-        if (!active.TryAdd(registration, alarm))
+        if (!await AndroidAlarmRecovery.BeginDeliveryAsync(() => active.TryAdd(registration, alarm)))
         {
             Log.Info(Tag, $"Duplicate alarm delivery ignored: {registration}");
             return;
         }
 
+        var recoveryNeeded = false;
         try
         {
             var zone = TimeZoneInfo.Local;
@@ -173,6 +174,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         }
         catch (Exception ex)
         {
+            recoveryNeeded = true;
             Log.Error(Tag, $"Alarm delivery failed: {ex}");
             ShowError("Alarm could not ring", ex.Message);
             if (alarm.Player is not null)
@@ -181,6 +183,16 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
                 catch (Exception releaseError) { Log.Error(Tag, $"Alarm player release failed: {releaseError}"); }
             }
             active.TryRemove(registration, out _);
+        }
+        finally
+        {
+            try { await AndroidAlarmRecovery.FinishDeliveryAsync(this); }
+            catch (Exception ex) { AndroidAlarmRecovery.ShowFailure(this, ex); }
+            if (recoveryNeeded)
+            {
+                try { await AndroidAlarmRecovery.RunAsync(this); }
+                catch (Exception ex) { AndroidAlarmRecovery.ShowFailure(this, ex); }
+            }
         }
     }
 
@@ -192,6 +204,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
             return;
         }
         AndroidAlarmSoundPlayer player;
+        string? unavailable = null;
         lock (alarm.Sync)
         {
             if (!alarm.Started || (snooze && alarm.SnoozeMinutes is null) || alarm.Completing != 0 ||
@@ -200,12 +213,24 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
                 Log.Warn(Tag, $"Alarm action ignored for inactive alarm: {registration}");
                 return;
             }
-            alarm.Completing = 1;
             player = alarm.Player;
+            if (snooze && alarm.AudioStopped)
+                unavailable = "Alarm audio is stopped. Retry dismissal.";
+            else if (snooze && alarm.Recovering)
+                unavailable = "Alarm sound is recovering. Please retry snooze.";
+            else
+                alarm.Completing = 1;
         }
+        if (unavailable is not null)
+        {
+            ReportActionError(registration, alarm, unavailable);
+            return;
+        }
+        var snoozeConfirmed = !snooze;
+        var playerReleased = false;
+        var actionCompleted = false;
         try
         {
-            await player.ReleaseAsync();
             if (snooze)
             {
                 var result = registration.Kind == AlarmRegistrationKind.Regular
@@ -213,29 +238,61 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
                     : await Coordinator.SnoozeStartedSnoozePlaybackAsync(Store, Scheduler, registration, TimeProvider.System, TimeZoneInfo.Local, alarm.SnoozeMinutes!.Value);
                 if (result is not (SnoozeResult.Scheduled or SnoozeResult.Rescheduled))
                     throw new InvalidOperationException($"Snooze was not scheduled: {result}.");
+                snoozeConfirmed = true;
             }
-            else
+            await player.ReleaseAsync();
+            playerReleased = true;
+            lock (alarm.Sync) alarm.AudioStopped = true;
+            if (!snooze)
             {
-                var result = registration.Kind == AlarmRegistrationKind.Regular
-                    ? await Coordinator.CompleteStartedRegularPlaybackAsync(Store, registration, TimeZoneInfo.Local)
-                    : await Coordinator.CompleteStartedSnoozePlaybackAsync(Store, registration, TimeZoneInfo.Local);
+                var result = await Coordinator.DismissStartedPlaybackAsync(Store, Scheduler, registration, TimeZoneInfo.Local);
                 if (result is not (PlaybackCompletionResult.Completed or PlaybackCompletionResult.AlreadyCompleted))
                     throw new InvalidOperationException($"Dismissal was not recorded: {result}.");
             }
             Log.Info(Tag, $"Alarm {(snooze ? "snoozed" : "dismissed")}: {registration}");
+            actionCompleted = true;
             await ReconcileAfterDeliveryAsync();
         }
         catch (Exception ex)
         {
             Log.Error(Tag, $"Alarm action failed: {ex}");
-            ShowError(snooze ? "Snooze could not be confirmed" : "Dismissal could not be confirmed", ex.Message);
+            if (snooze && !snoozeConfirmed)
+                ReportActionError(registration, alarm, $"Snooze could not be confirmed. Retry or dismiss. {ex.Message}");
+            else if (!playerReleased)
+                ReportActionError(registration, alarm, $"Alarm audio could not be stopped. {ex.Message}");
+            else
+                ReportActionError(registration, alarm,
+                    $"Dismissal could not be confirmed. Retry dismissal; a pending snooze may still occur. {ex.Message}");
         }
         finally
         {
-            Notifications().Cancel(alarm.NotificationId);
-            active.TryRemove(registration, out _);
-            ActiveAlarmsChanged?.Invoke();
+            if (!actionCompleted)
+            {
+                Exception? pendingError;
+                lock (alarm.Sync)
+                {
+                    alarm.Completing = 0;
+                    pendingError = alarm.PendingError;
+                    alarm.PendingError = null;
+                }
+                if (!playerReleased && pendingError is not null) OnPlaybackError(registration, alarm, player, pendingError);
+            }
+            else
+            {
+                Notifications().Cancel(alarm.NotificationId);
+                active.TryRemove(registration, out _);
+                ActiveAlarmsChanged?.Invoke();
+            }
         }
+    }
+
+    private void ReportActionError(AlarmRegistration registration, ActiveAlarm alarm, string message)
+    {
+        lock (alarm.Sync) alarm.ActionError = message;
+        try { ShowActive(registration, alarm); }
+        catch (Exception ex) { Log.Error(Tag, $"Could not update alarm controls: {ex}"); }
+        ShowError("Alarm action needs attention", message);
+        ActiveAlarmsChanged?.Invoke();
     }
 
     private void StartForegroundNotification()
@@ -294,7 +351,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         using var dismissAction = dismissBuilder.Build();
         builder.SetSmallIcon(global::Android.Resource.Drawable.IcLockIdleAlarm);
         builder.SetContentTitle(alarm.Label);
-        builder.SetContentText("Alarm is sounding");
+        builder.SetContentText(alarm.ActionError ?? "Alarm is sounding");
         builder.SetCategory(Notification.CategoryAlarm);
         builder.SetOngoing(true);
         builder.SetContentIntent(display);
@@ -332,9 +389,9 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         return intent;
     }
 
-    internal IReadOnlyList<(AlarmRegistration Registration, string Label, int? SnoozeMinutes)> GetActiveAlarms() =>
+    internal IReadOnlyList<(AlarmRegistration Registration, string Label, int? SnoozeMinutes, string? ActionError)> GetActiveAlarms() =>
         active.Where(item => item.Value.Started)
-            .Select(item => (item.Key, item.Value.Label, item.Value.SnoozeMinutes)).ToArray();
+            .Select(item => (item.Key, item.Value.Label, item.Value.SnoozeMinutes, item.Value.ActionError)).ToArray();
 
     internal bool IsProcessing(AlarmRegistration registration) => active.ContainsKey(registration);
 
@@ -379,8 +436,8 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         Log.Error(Tag, $"Alarm playback error: {error}");
         lock (alarm.Sync)
         {
-            if (alarm.Completing != 0 || !ReferenceEquals(alarm.Player, source)) return;
-            if (!alarm.Started)
+            if (!ReferenceEquals(alarm.Player, source)) return;
+            if (!alarm.Started || alarm.Completing != 0)
             {
                 alarm.PendingError = error;
                 return;
@@ -435,6 +492,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         }
         finally
         {
+            lock (alarm.Sync) alarm.Recovering = false;
             if (replacement is not null) _ = ReleaseFailedPlayerAsync(replacement);
         }
     }
@@ -562,10 +620,12 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         public object Sync { get; } = new();
         public int NotificationId { get; } = notificationId;
         public string Label { get; set; } = "Alarm";
+        public string? ActionError { get; set; }
         public int? SnoozeMinutes { get; set; }
         public double Volume { get; set; } = 1;
         public AndroidAlarmSoundPlayer? Player { get; set; }
         public bool Started { get; set; }
+        public bool AudioStopped { get; set; }
         public bool UsingSelectedSound { get; set; }
         public bool Recovering { get; set; }
         public Exception? PendingError { get; set; }

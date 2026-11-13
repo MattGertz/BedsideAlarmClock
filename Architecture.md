@@ -162,7 +162,7 @@ Phase 1 will target `net10.0-android` only. Windows compilation is intentionally
 - Created `BedsideAlarmClock.slnx` and an Android-only MAUI app targeting `net10.0-android`.
 - Replaced the template landing screen with a black, centered clock displaying subdued time and the localized weekday/date. Added persisted 12/24-hour, seconds, and date settings, defaulting to on, and a clock-font choice of sans serif, serif, or monospace (sans serif by default).
 - The clock uses a repeating one-second UI timer while visible, reads the current local time on each tick, and only updates displayed text when it changes. It refreshes immediately when the page appears and stops when the page is no longer visible.
-- The clock measures `10:00:00 AM` using the Android text rendering font and reduces the time font size as needed when the available width changes, reserving 48 physical pixels on each side for pixel shifting.
+- The clock measures `10:00:00 AM` using the selected Android font and fits the time to the available width and height, allowing room for the date and reserving 48 physical pixels on each side for pixel shifting.
 - Android keeps the display awake only while the clock page is active in the resumed activity. The activity hides system bars with transient swipe reveal on Android 11+ and uses immersive sticky flags on older supported versions.
 - Removed unused template network permissions and added a root `.gitignore` for .NET, IDE, test, and Android signing artifacts.
 - Verified a successful Android solution build with `dotnet build BedsideAlarmClock.slnx --no-restore`. No emulator or device was connected during this phase, so visual and lifecycle testing remains necessary.

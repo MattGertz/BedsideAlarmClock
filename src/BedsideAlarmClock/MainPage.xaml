@@ -10,7 +10,7 @@
         <Grid x:Name="ClockSafeArea"
               SizeChanged="OnClockSafeAreaSizeChanged">
             <VerticalStackLayout x:Name="ClockContent"
-                                 HorizontalOptions="Center"
+                                 HorizontalOptions="Fill"
                                  VerticalOptions="Center"
                                  Spacing="12">
                 <Label x:Name="TimeLabel"
@@ -25,6 +25,7 @@
                        HorizontalOptions="Center"
                        FontSize="18"
                        TextColor="#858585"
+                       SizeChanged="OnClockSafeAreaSizeChanged"
                        SemanticProperties.HeadingLevel="Level2" />
             </VerticalStackLayout>
         </Grid>

@@ -46,8 +46,8 @@ public partial class MainPage : ContentPage
         var font = Preferences.Default.Get(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[0]);
         TimeLabel.FontFamily = ClockSettings.FontFamily(font);
         DateLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowDateKey, true);
-        UpdateClockFontSize();
         RefreshClock();
+        UpdateClockFontSize();
         _clockTimer.Start();
         _brightness.Activate();
         _pixelShiftTimer.Start();
@@ -123,7 +123,11 @@ public partial class MainPage : ContentPage
     private void UpdateClockFontSize()
     {
         var padding = ClockSafeArea.Padding;
-        ClockTextSizer.Fit(TimeLabel, ClockSafeArea.Width - padding.Left - padding.Right);
+        var dateHeight = DateLabel.IsVisible ? DateLabel.Height + ClockContent.Spacing : 0;
+        if (DateLabel.IsVisible && DateLabel.Height <= 0)
+            return;
+        ClockTextSizer.Fit(TimeLabel, ClockSafeArea.Width - padding.Left - padding.Right,
+            ClockSafeArea.Height - padding.Top - padding.Bottom - dateHeight);
     }
 
     private void OnPixelShiftTimerTick(object? sender, EventArgs e)

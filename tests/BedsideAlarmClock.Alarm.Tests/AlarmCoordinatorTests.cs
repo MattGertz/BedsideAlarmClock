@@ -435,6 +435,74 @@ public sealed class AlarmCoordinatorTests : IDisposable
             coordinator.InspectRegularDeliveryAsync(store, registration, trigger, TimeZoneInfo.Utc));
     }
 
+    [Fact]
+    public async Task RecoveryWaitsForAllPreparingDeliveriesAndThenRunsOnce()
+    {
+        var barrier = new AlarmRecoveryBarrier();
+        var anchor = 0;
+        Task Recover() { anchor++; return Task.CompletedTask; }
+        Assert.True(await barrier.BeginDeliveryAsync(() => true));
+        Assert.False(await barrier.BeginDeliveryAsync(() => false));
+        Assert.True(await barrier.BeginDeliveryAsync(() => true));
+
+        Assert.False(await barrier.RecoverAsync(Recover));
+        Assert.False(await barrier.RecoverAsync(Recover));
+        await barrier.FinishDeliveryAsync(Recover);
+        Assert.Equal(0, anchor);
+        await barrier.FinishDeliveryAsync(Recover);
+        Assert.Equal(1, anchor);
+    }
+
+    [Fact]
+    public async Task DeliveryCannotBeginUntilRecoveryFinishesUpdatingAnchor()
+    {
+        var barrier = new AlarmRecoveryBarrier();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var anchor = 0;
+        var observedAnchor = -1;
+        var recovery = barrier.RecoverAsync(async () =>
+        {
+            entered.SetResult();
+            await release.Task;
+            anchor = 1;
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var delivery = barrier.BeginDeliveryAsync(() =>
+        {
+            observedAnchor = anchor;
+            return true;
+        });
+        try
+        {
+            Assert.False(delivery.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+        Assert.True(await recovery);
+        Assert.True(await delivery);
+        Assert.Equal(1, observedAnchor);
+        await barrier.FinishDeliveryAsync(() => Task.CompletedTask);
+    }
+
+    [Fact]
+    public async Task DeferredRecoveryFailureIsReportedAndCanBeRetried()
+    {
+        var barrier = new AlarmRecoveryBarrier();
+        Assert.True(await barrier.BeginDeliveryAsync(() => true));
+        Assert.False(await barrier.RecoverAsync(() => Task.CompletedTask));
+        await Assert.ThrowsAsync<IOException>(() =>
+            barrier.FinishDeliveryAsync(() => Task.FromException(new IOException("Recovery failed."))));
+
+        var attempts = 0;
+        Assert.True(await barrier.RecoverAsync(() => { attempts++; return Task.CompletedTask; }));
+        Assert.Equal(1, attempts);
+        Assert.True(await barrier.BeginDeliveryAsync(() => true));
+        await barrier.FinishDeliveryAsync(() => Task.CompletedTask);
+    }
+
     private sealed class FixedTimeProvider : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.Parse("2025-01-01T00:00:00Z");

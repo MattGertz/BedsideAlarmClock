@@ -218,10 +218,12 @@ public sealed class AlarmCoordinator
             var changed = false;
             foreach (var entry in registrations)
             {
+                if (isActive(entry.Registration))
+                    continue;
                 if (clockStatus == RecoveryClockStatus.Uncertain &&
                     ((entry.State == AlarmRegistrationState.Desired && entry.TriggerAt <= now) ||
                      (entry.State is AlarmRegistrationState.DeliveryObserved or AlarmRegistrationState.PlaybackReserved or
-                         AlarmRegistrationState.PlaybackStarted)) && !isActive(entry.Registration))
+                         AlarmRegistrationState.PlaybackStarted)))
                 {
                     entry.State = AlarmRegistrationState.ClockUncertain;
                     entry.ClockUncertainAt = now;
@@ -248,8 +250,7 @@ public sealed class AlarmCoordinator
                     continue;
                 }
                 if (entry.State is not (AlarmRegistrationState.DeliveryObserved or
-                    AlarmRegistrationState.PlaybackReserved or AlarmRegistrationState.PlaybackStarted) ||
-                    isActive(entry.Registration))
+                    AlarmRegistrationState.PlaybackReserved or AlarmRegistrationState.PlaybackStarted))
                     continue;
                 var latest = entry.PlaybackStartedAt ?? entry.PlaybackReservedAt ?? entry.ObservedAt
                     ?? throw new InvalidDataException("A delivery has no recorded time.");
@@ -566,10 +567,23 @@ public sealed class AlarmCoordinator
         return CompleteStartedPlaybackAsync(registrationRepository, registration, timeZone);
     }
 
+    internal Task<PlaybackCompletionResult> DismissStartedPlaybackAsync(
+        IAlarmRegistrationStore registrationRepository, IAlarmRegistrationScheduler scheduler,
+        AlarmRegistration registration, TimeZoneInfo timeZone)
+    {
+        ArgumentNullException.ThrowIfNull(scheduler);
+        if (registration.Kind == AlarmRegistrationKind.Regular)
+            ValidateRegularRegistration(registration);
+        else
+            ValidateSnoozeRegistration(registration);
+        return CompleteStartedPlaybackAsync(registrationRepository, registration, timeZone, scheduler);
+    }
+
     private async Task<PlaybackCompletionResult> CompleteStartedPlaybackAsync(
         IAlarmRegistrationStore registrationRepository,
         AlarmRegistration registration,
-        TimeZoneInfo timeZone)
+        TimeZoneInfo timeZone,
+        IAlarmRegistrationScheduler? cancelSnooze = null)
     {
         ArgumentNullException.ThrowIfNull(registrationRepository);
         ArgumentNullException.ThrowIfNull(timeZone);
@@ -586,12 +600,26 @@ public sealed class AlarmCoordinator
                 return PlaybackCompletionResult.NotStarted;
 
             var wasCompleted = entry.State == AlarmRegistrationState.PlaybackCompleted;
+            var pendingSnooze = cancelSnooze is null ? null : registrations.SingleOrDefault(item =>
+                item.Kind == AlarmRegistrationKind.Snooze && item.AlarmId == registration.AlarmId &&
+                item.SnoozedFromRegistrationId == registration.RegistrationId &&
+                (item.SnoozedFromKind ?? AlarmRegistrationKind.Regular) == registration.Kind &&
+                item.State is AlarmRegistrationState.Desired or AlarmRegistrationState.PendingCancellation or
+                    AlarmRegistrationState.SnoozeUnconfirmed);
+            var changed = false;
             if (!wasCompleted)
             {
                 entry.State = AlarmRegistrationState.PlaybackCompleted;
                 entry.CancellationPending = true;
-                await registrationRepository.SaveAsync(registrations);
+                changed = true;
             }
+            if (pendingSnooze?.State is AlarmRegistrationState.Desired or AlarmRegistrationState.SnoozeUnconfirmed)
+            {
+                pendingSnooze.State = AlarmRegistrationState.PendingCancellation;
+                changed = true;
+            }
+            if (changed) await registrationRepository.SaveAsync(registrations);
+            if (pendingSnooze is not null) cancelSnooze!.Cancel(pendingSnooze.Registration);
 
             await DisableDeliveredOneTimeAsync(alarms, entry, timeZone);
             return wasCompleted ? PlaybackCompletionResult.AlreadyCompleted : PlaybackCompletionResult.Completed;
@@ -667,7 +695,7 @@ public sealed class AlarmCoordinator
                     RegistrationId = identity.RegistrationId,
                     Kind = identity.Kind,
                     TriggerAt = now.AddMinutes(snoozeMinutes),
-                    State = AlarmRegistrationState.Desired,
+                    State = AlarmRegistrationState.SnoozeUnconfirmed,
                     SnoozedFromRegistrationId = registration.RegistrationId,
                     SnoozedFromKind = registration.Kind
                 };
@@ -676,17 +704,76 @@ public sealed class AlarmCoordinator
                 registrations.Add(snooze);
                 await registrationRepository.SaveAsync(registrations);
             }
-            if (snooze.State != AlarmRegistrationState.Desired)
+            if (snooze.State is not (AlarmRegistrationState.Desired or AlarmRegistrationState.SnoozeUnconfirmed))
                 throw new InvalidOperationException("The snooze has already been resolved; it cannot be rescheduled.");
             await DisableDeliveredOneTimeAsync(alarms, source, timeZone);
+            if (snooze.State == AlarmRegistrationState.SnoozeUnconfirmed && snooze.TriggerAt <= timeProvider.GetUtcNow())
+            {
+                snooze.TriggerAt = timeProvider.GetUtcNow().AddMinutes(snoozeMinutes);
+                await registrationRepository.SaveAsync(registrations);
+            }
             if (snooze.TriggerAt <= timeProvider.GetUtcNow())
                 throw new InvalidOperationException("The snooze is due or overdue and cannot be scheduled as a future alarm.");
-            scheduler.Schedule(snooze.Registration, snooze.TriggerAt);
+            try
+            {
+                scheduler.Schedule(snooze.Registration, snooze.TriggerAt);
+            }
+            catch (Exception scheduleError) when (snooze.State == AlarmRegistrationState.SnoozeUnconfirmed)
+            {
+                CancelUnconfirmedSnooze(scheduler, snooze.Registration, scheduleError);
+                throw;
+            }
+            if (snooze.State == AlarmRegistrationState.SnoozeUnconfirmed)
+            {
+                snooze.State = AlarmRegistrationState.Desired;
+                try
+                {
+                    await registrationRepository.SaveAsync(registrations);
+                }
+                catch (Exception saveError)
+                {
+                    IReadOnlyList<AlarmRegistrationEntry> persisted;
+                    try { persisted = await registrationRepository.LoadExistingAsync(); }
+                    catch (Exception readError)
+                    {
+                        Exception failure = new AggregateException("Snooze confirmation could not be verified.",
+                            saveError, readError);
+                        snooze.State = AlarmRegistrationState.SnoozeUnconfirmed;
+                        try { await registrationRepository.SaveAsync(registrations); }
+                        catch (Exception rollbackError)
+                        {
+                            failure = new AggregateException("Snooze confirmation could not be reverted.",
+                                failure, rollbackError);
+                        }
+                        CancelUnconfirmedSnooze(scheduler, snooze.Registration, failure);
+                        throw failure;
+                    }
+                    if (!persisted.Any(item => item.Registration == snooze.Registration &&
+                        item.State == AlarmRegistrationState.Desired && item.TriggerAt == snooze.TriggerAt))
+                    {
+                        CancelUnconfirmedSnooze(scheduler, snooze.Registration, saveError);
+                        throw;
+                    }
+                    System.Diagnostics.Trace.TraceWarning(
+                        $"Snooze confirmation write reported an error, but the committed registration was verified: {saveError}");
+                }
+            }
             return isRetry ? SnoozeResult.Rescheduled : SnoozeResult.Scheduled;
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    private static void CancelUnconfirmedSnooze(
+        IAlarmRegistrationScheduler scheduler, AlarmRegistration registration, Exception failure)
+    {
+        try { scheduler.Cancel(registration); }
+        catch (Exception cancelError)
+        {
+            throw new AggregateException("Snooze failed and its Android registration could not be canceled.",
+                failure, cancelError);
         }
     }
 

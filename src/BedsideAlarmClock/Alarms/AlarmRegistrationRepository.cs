@@ -13,7 +13,8 @@ internal enum AlarmRegistrationState
     PlaybackStarted,
     PlaybackCompleted,
     Interrupted,
-    ClockUncertain
+    ClockUncertain,
+    SnoozeUnconfirmed
 }
 
 internal enum MissedAlarmReason
@@ -204,6 +205,9 @@ internal sealed class AlarmRegistrationRepository : IAlarmRegistrationStore
                 throw new InvalidDataException("An alarm registration has inconsistent state.");
             if (!identities.Add(entry.Registration))
                 throw new InvalidDataException("Registration identities must be unique.");
+            if (entry.State == AlarmRegistrationState.SnoozeUnconfirmed &&
+                (entry.Kind != AlarmRegistrationKind.Snooze || entry.SnoozedFromRegistrationId is null))
+                throw new InvalidDataException("An unconfirmed snooze requires a source registration.");
             if (entry.Kind == AlarmRegistrationKind.Regular && entry.State == AlarmRegistrationState.Desired &&
                 !desiredRegular.Add(entry.AlarmId))
                 throw new InvalidDataException("Only one desired regular registration per alarm is allowed.");

@@ -112,14 +112,49 @@ and were dismissed independently. It tries the
 system alarm when a selected sound cannot be prepared or fails during
 playback; the runtime-failure path still needs device-level testing.
 
-Before enabling delivery by default, resolve or validate: recovery races
-between a clock change and an active delivery; uncertain journal or Android
-registration outcomes; snooze scheduling failure after playback is stopped;
-notification-disabled error visibility; and cleanup of abandoned imported
-sound files. Further test overlapping alarms, sound selection and failure, disabled
-snooze, Doze, DND, competing audio and interruptions. Before-first-unlock
-delivery is not supported or verified. Phone testing must establish actual
-audibility and Samsung-specific behavior; keep a separate backup alarm.
+Recovery now defers anchor updates while any delivery is being prepared and
+retries deferred work after preparation finishes, and schedules a retry to
+help recover if the process dies. Tests cover overlapping preparations, a clock change during
+a reservation, an already-playing alarm, and interrupted reservation recovery.
+On the isolated emulator, an alarm kept playing and could be dismissed after a
+backward clock change. The precise preparation race has not been reproduced
+on an Android device. A second clock change during recovery remains an accepted,
+documented edge case rather than a prerequisite for phone testing.
+
+Snooze now leaves playback and controls active until scheduling is confirmed.
+On failure, the controls show an error and offer retry or dismissal. An
+unconfirmed snooze is recorded separately from a confirmed snooze: its callback
+is rejected, it is not automatically rescheduled, and cancellation is attempted
+and retried during reconciliation. A user retry can schedule it again, using a
+fresh interval if the original time has passed. Dismissal also cancels the
+linked snooze; if dismissal cannot be recorded, it remains unconfirmed and must
+be retried. On the isolated emulator, a backward clock
+change caused snooze to fail while the player remained active; after restoring
+the clock, retry registered the snooze and stopped playback. This also exercised
+the error message with notification permission denied. That emulator test
+predated the unconfirmed-state change; the new failure paths are unit-tested.
+
+If the journal reports an error while confirming a snooze and also cannot be
+read back, the app cannot determine whether confirmation was committed. It
+tries to revert confirmation and cancel the Android registration, and reports
+the uncertainty. If the journal cannot be corrected, a committed confirmation
+could still be reconciled or delivered later. Failure handling has been
+tested with simulated failures, not on a phone.
+
+For practical phone testing, prioritize actual audibility and timely start;
+prompt dismiss and snooze; a snooze ringing at its requested interval; locked
+and background delivery; sound selection and fallback; and reboot, timezone,
+Doze, DND and Samsung power behavior. Also verify multiple alarms and disabled
+snooze. Keep a separate backup alarm.
+
+The tests enforce the agreed 30-second cutoff: a later alarm is reported as
+missed rather than rung. If the process dies after delivery was observed,
+recovery reports an interrupted occurrence rather than restarting that same
+occurrence; this includes a crash while preparing sound. Those are current
+behavioral tradeoffs, not proof that the alarm remained audible until dismissed.
+The rare clock and storage failures above and cleanup of abandoned imported
+sound files should not become an open-ended pre-phone investigation.
+Before-first-unlock delivery is not supported or verified.
 
 ### Historical groundwork
 
