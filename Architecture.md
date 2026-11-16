@@ -92,6 +92,8 @@ Reference: [Schedule exact alarms](https://developer.android.com/about/versions/
 
 Full-screen intent access and launch behavior are controlled by Android and vary by platform version and device state. Check/request access when appropriate, but treat the full-screen activity as best effort. Provide a high-priority alarm notification with clear dismiss and snooze actions as the fallback.
 
+While the clock is visible, show persistent dismiss and snooze controls there for each ringing alarm. Show the next upcoming alarm, including confirmed snoozes, and offer SKIP only when there is an upcoming delivery.
+
 Reference: [Android 14 behavior changes](https://developer.android.com/about/versions/14/behavior-changes-14#secure-fsi).
 
 ### Audio and foreground service

@@ -20,10 +20,14 @@ the only alarm during development.
   outage. Checking a start request cannot guarantee when audio actually
   becomes audible; the playback implementation must investigate that gap.
 - Present overlapping active alarms together, with separate dismiss and
-  snooze controls.
+  snooze controls on the clock while it is visible; retain notification and
+  full-screen controls when the clock is not visible.
 - Snooze defaults to ten minutes, can be disabled, and does not change the
   underlying recurring schedule.
-- Touching the clock reveals a red SKIP button for three seconds. It skips
+- The clock shows the day and time of the next alarm, including a confirmed
+  snooze, or "No alarm set".
+- Touching the clock reveals a red SKIP button for three seconds when an
+  upcoming delivery exists. It skips
   only the next upcoming delivery: an occurrence of a repeating alarm, a
   one-time alarm, or a pending snooze. Repeated presses can skip additional
   occurrences. The button is unavailable while an alarm is being delivered.

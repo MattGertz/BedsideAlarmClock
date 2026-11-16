@@ -264,6 +264,29 @@ public sealed class AlarmCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task NextAlarmFollowsEnabledOccurrencesAndSkippedDates()
+    {
+        var coordinator = CreateCoordinator();
+        var clock = new FixedTimeProvider();
+        var once = Once(8);
+        once.Enabled = false;
+        var repeating = new AlarmDefinition
+        {
+            Id = Guid.NewGuid(), Hour = 7, Minute = 30, Enabled = true,
+            IsRepeating = true, Days = AlarmDays.Thursday, SkipDate = new DateOnly(2025, 1, 2)
+        };
+        await coordinator.AddAsync(once);
+        Assert.Null(await coordinator.GetNextAlarmAsync(clock, TimeZoneInfo.Utc));
+
+        await coordinator.AddAsync(repeating);
+        Assert.Equal(DateTimeOffset.Parse("2025-01-09T07:30:00Z"),
+            await coordinator.GetNextAlarmAsync(clock, TimeZoneInfo.Utc));
+        Assert.Equal(SkipNextResult.Skipped, await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false));
+        Assert.Equal(DateTimeOffset.Parse("2025-01-16T07:30:00Z"),
+            await coordinator.GetNextAlarmAsync(clock, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
     public async Task SkipNextSelectsOnlyTheEarliestAndPreservesRepeatedSkips()
     {
         var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));

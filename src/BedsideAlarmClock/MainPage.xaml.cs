@@ -1,6 +1,7 @@
 using BedsideAlarmClock.Display;
 using BedsideAlarmClock.Alarms;
 using BedsideAlarmClock.Platforms.Android;
+using System.Globalization;
 
 namespace BedsideAlarmClock;
 
@@ -12,6 +13,11 @@ public partial class MainPage : ContentPage
     private readonly IClockBrightness _brightness;
     private readonly AlarmCoordinator _alarms;
     private bool _skipBusy;
+    private bool _clockActive;
+    private int _nextAlarmVersion;
+    private int _touchVersion;
+    private DateTimeOffset? _nextAlarm;
+    private DateTimeOffset _nextAlarmRefreshAt;
     private int _pixelShiftPosition;
     private string? _lastTimeText;
     private string? _lastDateText;
@@ -53,12 +59,15 @@ public partial class MainPage : ContentPage
 
     public void ResumeClock()
     {
-        AlarmPlaybackService.AlarmDeliveryStarting -= OnAlarmDeliveryStarting;
-        AlarmPlaybackService.AlarmDeliveryStarting += OnAlarmDeliveryStarting;
+        _clockActive = true;
+        AlarmPlaybackService.AlarmStateChanged -= OnAlarmStateChanged;
+        AlarmPlaybackService.AlarmStateChanged += OnAlarmStateChanged;
         var font = Preferences.Default.Get(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[0]);
         TimeLabel.FontFamily = ClockSettings.FontFamily(font);
         DateLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowDateKey, true);
         RefreshClock();
+        RenderAlarmControls();
+        _ = RefreshNextAlarmAsync();
         UpdateClockFontSize();
         _clockTimer.Start();
         _brightness.Activate();
@@ -67,7 +76,9 @@ public partial class MainPage : ContentPage
 
     public void PauseClock()
     {
-        AlarmPlaybackService.AlarmDeliveryStarting -= OnAlarmDeliveryStarting;
+        _clockActive = false;
+        _nextAlarmVersion++;
+        AlarmPlaybackService.AlarmStateChanged -= OnAlarmStateChanged;
         HideSkipButton();
         _clockTimer.Stop();
         _pixelShiftTimer.Stop();
@@ -116,22 +127,134 @@ public partial class MainPage : ContentPage
     {
         RefreshClock();
         if (AlarmPlaybackService.IsAlarmProcessing) HideSkipButton();
+        if (DateTimeOffset.UtcNow >= _nextAlarmRefreshAt ||
+            _nextAlarm is { } next && next <= DateTimeOffset.UtcNow)
+        {
+            _nextAlarmRefreshAt = DateTimeOffset.UtcNow.AddSeconds(15);
+            _ = RefreshNextAlarmAsync();
+        }
     }
 
     internal bool IsSkipButtonVisible => SkipButton.IsVisible;
 
-    internal void OnClockScreenTouched()
+    internal async void OnClockScreenTouched()
     {
         if (_skipBusy || AlarmPlaybackService.IsAlarmProcessing) return;
+        var touch = ++_touchVersion;
+        if (!await RefreshNextAlarmAsync() || touch != _touchVersion ||
+            !_clockActive || _skipBusy || AlarmPlaybackService.IsAlarmProcessing || _nextAlarm is null)
+            return;
         SkipButton.IsVisible = true;
         _skipTimer.Stop();
         _skipTimer.Start();
     }
 
-    private void OnAlarmDeliveryStarting() => Dispatcher.Dispatch(HideSkipButton);
+    private void OnAlarmStateChanged() => Dispatcher.Dispatch(() =>
+    {
+        if (!_clockActive) return;
+        if (AlarmPlaybackService.IsAlarmProcessing) HideSkipButton();
+        RenderAlarmControls();
+        _ = RefreshNextAlarmAsync();
+    });
+
+    private async Task<bool> RefreshNextAlarmAsync()
+    {
+        var version = ++_nextAlarmVersion;
+        try
+        {
+#if ALARM_DELIVERY_EXPERIMENT
+            var store = IPlatformApplication.Current!.Services.GetRequiredService<AlarmRegistrationRepository>();
+            var next = await _alarms.GetNextAlarmAsync(TimeProvider.System, TimeZoneInfo.Local, store);
+#else
+            var next = await _alarms.GetNextAlarmAsync(TimeProvider.System, TimeZoneInfo.Local);
+#endif
+            if (!_clockActive || version != _nextAlarmVersion) return false;
+            _nextAlarm = next;
+            _nextAlarmRefreshAt = DateTimeOffset.UtcNow.AddSeconds(15);
+            if (next is { } instant)
+            {
+                var local = TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.Local);
+                var format = Preferences.Default.Get(ClockSettings.Use24HourTimeKey, true)
+                    ? "dddd H:mm" : "dddd h:mm tt";
+                NextAlarmLabel.Text = $"Next alarm: {local.ToString(format, CultureInfo.CurrentCulture)}";
+            }
+            else
+            {
+                NextAlarmLabel.Text = "No alarm set";
+                HideSkipButton();
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Error("BedsideAlarm", $"Could not load next alarm: {ex}");
+            if (_clockActive && version == _nextAlarmVersion)
+            {
+                _nextAlarm = null;
+                _nextAlarmRefreshAt = DateTimeOffset.UtcNow.AddSeconds(15);
+                NextAlarmLabel.Text = "Alarm status unavailable";
+                HideSkipButton();
+            }
+            return false;
+        }
+    }
+
+    private void RenderAlarmControls()
+    {
+        ActiveAlarmList.Clear();
+        var alarms = AlarmPlaybackService.Current?.GetActiveAlarms() ?? [];
+        foreach (var (registration, label, snoozeMinutes, actionError) in alarms)
+        {
+            var group = new VerticalStackLayout { Spacing = 4, HorizontalOptions = LayoutOptions.Center };
+            group.Add(new Label
+            {
+                Text = label, FontSize = 16, TextColor = Colors.White,
+                HorizontalTextAlignment = TextAlignment.Center
+            });
+            if (actionError is not null)
+                group.Add(new Label { Text = actionError, TextColor = Colors.White, FontSize = 14 });
+            var buttons = new HorizontalStackLayout { Spacing = 12, HorizontalOptions = LayoutOptions.Center };
+            var dismiss = new Button
+            {
+                Text = "DISMISS", FontSize = 18, MinimumHeightRequest = 56,
+                MinimumWidthRequest = 140, BackgroundColor = Color.FromArgb("#A62222"), TextColor = Colors.White
+            };
+            dismiss.Clicked += (_, _) => SendAlarmAction(registration, AlarmPlaybackService.DismissAction);
+            buttons.Add(dismiss);
+            if (snoozeMinutes is { } minutes)
+            {
+                var snooze = new Button
+                {
+                    Text = $"SNOOZE {minutes} MIN", FontSize = 18, MinimumHeightRequest = 56,
+                    MinimumWidthRequest = 140, BackgroundColor = Color.FromArgb("#555555"), TextColor = Colors.White
+                };
+                snooze.Clicked += (_, _) => SendAlarmAction(registration, AlarmPlaybackService.SnoozeAction);
+                buttons.Add(snooze);
+            }
+            group.Add(buttons);
+            ActiveAlarmList.Add(group);
+        }
+        AlarmControls.IsVisible = alarms.Count > 0;
+    }
+
+    private void SendAlarmAction(AlarmRegistration registration, string action)
+    {
+        try
+        {
+            using var intent = AlarmPlaybackService.CreateActionIntent(
+                global::Android.App.Application.Context, registration, action);
+            global::Android.App.Application.Context.StartService(intent);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Error("BedsideAlarm", $"Could not send alarm action: {ex}");
+            _ = DisplayAlertAsync("Unable to control alarm", "Please retry or use the alarm notification.", "OK");
+        }
+    }
 
     private void HideSkipButton()
     {
+        _touchVersion++;
         _skipTimer.Stop();
         SkipButton.IsVisible = false;
     }
@@ -167,6 +290,7 @@ public partial class MainPage : ContentPage
         finally
         {
             _skipBusy = false;
+            await RefreshNextAlarmAsync();
         }
     }
 
@@ -213,7 +337,26 @@ public partial class MainPage : ContentPage
 
     private async void OnAlarmsClicked(object? sender, EventArgs e)
     {
-        await Navigation.PushAsync(new AlarmListPage());
+        var shell = Shell.Current;
+        var alarmPage = new AlarmListPage();
+        void OnNavigated(object? sender, ShellNavigatedEventArgs args)
+        {
+            if (Navigation.NavigationStack.Contains(alarmPage)) return;
+            shell.Navigated -= OnNavigated;
+            if (shell.CurrentPage == this)
+                ResumeClock();
+        }
+
+        shell.Navigated += OnNavigated;
+        try
+        {
+            await Navigation.PushAsync(alarmPage);
+        }
+        catch
+        {
+            shell.Navigated -= OnNavigated;
+            throw;
+        }
     }
 
 }

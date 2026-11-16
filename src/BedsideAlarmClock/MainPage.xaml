@@ -6,6 +6,7 @@
              BackgroundColor="#000000">
     <Grid x:Name="ClockLayout"
           Padding="20"
+          RowDefinitions="*,Auto,Auto"
           SizeChanged="OnClockLayoutSizeChanged">
         <Grid x:Name="ClockSafeArea"
               SizeChanged="OnClockSafeAreaSizeChanged">
@@ -31,6 +32,7 @@
         </Grid>
 
         <Button x:Name="SkipButton"
+                Grid.Row="0"
                 Text="SKIP"
                 FontSize="13"
                 BackgroundColor="#A62222"
@@ -41,20 +43,36 @@
                 Clicked="OnSkipClicked"
                 SemanticProperties.Hint="Skip the next upcoming alarm" />
 
-        <HorizontalStackLayout HorizontalOptions="End"
-                               VerticalOptions="End">
-            <Button Text="Alarms"
-                    FontSize="13"
-                    TextColor="#A0A0A0"
-                    BackgroundColor="Transparent"
-                    Clicked="OnAlarmsClicked"
-                    SemanticProperties.Hint="Open alarm setup" />
-            <Button Text="Settings"
-                    FontSize="13"
-                    TextColor="#A0A0A0"
-                    BackgroundColor="Transparent"
-                    Clicked="OnSettingsClicked"
-                    SemanticProperties.Hint="Open clock settings" />
-        </HorizontalStackLayout>
+        <ScrollView x:Name="AlarmControls"
+                    Grid.Row="1"
+                    MaximumHeightRequest="180"
+                    IsVisible="False">
+            <VerticalStackLayout x:Name="ActiveAlarmList"
+                                 HorizontalOptions="Center"
+                                 Spacing="8" />
+        </ScrollView>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+            <Label x:Name="NextAlarmLabel"
+                   FontSize="13"
+                   TextColor="#A0A0A0"
+                   VerticalOptions="Center"
+                   LineBreakMode="WordWrap"
+                   Text="Loading alarm..." />
+            <HorizontalStackLayout Grid.Column="1">
+                <Button Text="Alarms"
+                        FontSize="13"
+                        TextColor="#A0A0A0"
+                        BackgroundColor="Transparent"
+                        Clicked="OnAlarmsClicked"
+                        SemanticProperties.Hint="Open alarm setup" />
+                <Button Text="Settings"
+                        FontSize="13"
+                        TextColor="#A0A0A0"
+                        BackgroundColor="Transparent"
+                        Clicked="OnSettingsClicked"
+                        SemanticProperties.Hint="Open clock settings" />
+            </HorizontalStackLayout>
+        </Grid>
     </Grid>
 </ContentPage>

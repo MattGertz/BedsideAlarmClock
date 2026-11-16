@@ -26,7 +26,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
     private AudioFocusRequestClass? focusRequest;
     private PowerManager.WakeLock? wakeLock;
     internal static AlarmPlaybackService? Current { get; private set; }
-    internal static event Action? AlarmDeliveryStarting;
+    internal static event Action? AlarmStateChanged;
     internal static bool IsAlarmProcessing => Current is { } service && !service.active.IsEmpty;
     internal event Action? ActiveAlarmsChanged;
 
@@ -97,7 +97,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         var recoveryNeeded = false;
         try
         {
-            AlarmDeliveryStarting?.Invoke();
+            NotifyAlarmStateChanged();
             var zone = TimeZoneInfo.Local;
             if (receivedAtMilliseconds <= 0)
                 throw new InvalidDataException("The alarm receipt time is missing.");
@@ -109,6 +109,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
             {
                 Log.Info(Tag, $"Ignoring {observed} alarm delivery: {registration}");
                 active.TryRemove(registration, out _);
+                NotifyAlarmStateChanged();
                 return;
             }
             if (observed != DeliveryRecordResult.Recorded)
@@ -168,7 +169,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
                 alarm.PendingError = null;
             }
             ShowActive(registration, alarm);
-            ActiveAlarmsChanged?.Invoke();
+            NotifyAlarmStateChanged();
             Log.Info(Tag, $"Alarm playback started: {registration}");
             if (pendingError is not null)
                 OnPlaybackError(registration, alarm, player, pendingError);
@@ -186,6 +187,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
                 catch (Exception releaseError) { Log.Error(Tag, $"Alarm player release failed: {releaseError}"); }
             }
             active.TryRemove(registration, out _);
+            NotifyAlarmStateChanged();
         }
         finally
         {
@@ -284,7 +286,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
             {
                 Notifications().Cancel(alarm.NotificationId);
                 active.TryRemove(registration, out _);
-                ActiveAlarmsChanged?.Invoke();
+                NotifyAlarmStateChanged();
             }
         }
     }
@@ -295,7 +297,13 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         try { ShowActive(registration, alarm); }
         catch (Exception ex) { Log.Error(Tag, $"Could not update alarm controls: {ex}"); }
         ShowError("Alarm action needs attention", message);
+        NotifyAlarmStateChanged();
+    }
+
+    private void NotifyAlarmStateChanged()
+    {
         ActiveAlarmsChanged?.Invoke();
+        AlarmStateChanged?.Invoke();
     }
 
     private void StartForegroundNotification()
@@ -614,7 +622,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         if (wakeLock?.IsHeld == true) wakeLock.Release();
         wakeLock?.Dispose();
         Current = null;
-        ActiveAlarmsChanged?.Invoke();
+        NotifyAlarmStateChanged();
         base.OnDestroy();
     }
 

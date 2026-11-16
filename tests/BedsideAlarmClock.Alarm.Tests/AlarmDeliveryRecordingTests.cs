@@ -953,6 +953,21 @@ public sealed class AlarmDeliveryRecordingTests : IDisposable
     }
 
     [Fact]
+    public async Task NextAlarmIncludesConfirmedSnoozeForDisabledOneTimeAlarm()
+    {
+        var (coordinator, store, snooze, clock, scheduler) = await SetupSnoozeAsync();
+        clock.Now = clock.Now.AddMinutes(-1);
+        Assert.False(Assert.Single(await coordinator.LoadAsync()).Enabled);
+        Assert.Equal(clock.Now.AddMinutes(1), await coordinator.GetNextAlarmAsync(clock, TimeZoneInfo.Utc, store));
+
+        Assert.Equal(SkipNextResult.Skipped,
+            await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false, store, scheduler));
+        Assert.Null(await coordinator.GetNextAlarmAsync(clock, TimeZoneInfo.Utc, store));
+        Assert.Equal(AlarmRegistrationState.PendingCancellation,
+            Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze).State);
+    }
+
+    [Fact]
     public async Task DismissingASnoozeCancelsOnlyItsUncertainFollowUp()
     {
         var (coordinator, store, snooze, clock, scheduler) = await SetupSnoozeAsync();

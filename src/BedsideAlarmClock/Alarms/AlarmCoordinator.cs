@@ -157,6 +157,28 @@ public sealed class AlarmCoordinator
     public Task<IReadOnlyList<AlarmDefinition>> DeleteAsync(AlarmDefinition expected) =>
         MutateAsync(alarms => alarms.RemoveAt(FindUnchanged(alarms, expected)));
 
+    internal async Task<DateTimeOffset?> GetNextAlarmAsync(
+        TimeProvider clock, TimeZoneInfo zone, IAlarmRegistrationStore? store = null)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(zone);
+        await gate.WaitAsync();
+        try
+        {
+            var alarms = await repository.LoadAsync();
+            var registrations = store is null
+                ? Array.Empty<AlarmRegistrationEntry>()
+                : (await store.LoadAsync()).ToArray();
+            AlarmRegistrationRepository.Validate(registrations);
+            var next = FindNextAlarm(alarms, registrations, clock.GetUtcNow(), zone);
+            return next.Snooze?.TriggerAt ?? next.Occurrence?.Instant;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     internal async Task<SkipNextResult> SkipNextAsync(
         TimeProvider clock, TimeZoneInfo zone, Func<bool> isAlarmActive,
         IAlarmRegistrationStore? store = null, IAlarmRegistrationScheduler? scheduler = null)
@@ -180,19 +202,8 @@ public sealed class AlarmCoordinator
                 IsCurrentDelivery(alarms, entry, zone)))
                 return SkipNextResult.AlarmActive;
 
-            var regular = alarms.Select(alarm => (Alarm: alarm,
-                    Occurrence: AlarmOccurrenceService.GetNextOccurrence(alarm, now, zone)))
-                .Where(item => item.Occurrence is not null)
-                .OrderBy(item => item.Occurrence!.Value.Instant).ThenBy(item => item.Alarm.Id)
-                .FirstOrDefault();
-            var snooze = registrations.Where(entry => entry.Kind == AlarmRegistrationKind.Snooze &&
-                    entry.State == AlarmRegistrationState.Desired && entry.TriggerAt > now &&
-                    IsCurrentDelivery(alarms, entry, zone))
-                .OrderBy(entry => entry.TriggerAt).ThenBy(entry => entry.AlarmId).ThenBy(entry => entry.RegistrationId)
-                .FirstOrDefault();
-
-            if (snooze is not null && (regular.Alarm is null ||
-                snooze.TriggerAt < regular.Occurrence!.Value.Instant))
+            var next = FindNextAlarm(alarms, registrations, now, zone);
+            if (next.Snooze is { } snooze)
             {
                 snooze.State = AlarmRegistrationState.PendingCancellation;
                 await store!.SaveAsync(registrations);
@@ -200,13 +211,13 @@ public sealed class AlarmCoordinator
                 catch (Exception ex) { throw new AlarmScheduleException(ex); }
                 return SkipNextResult.Skipped;
             }
-            if (regular.Alarm is null)
+            if (next.Alarm is not { } alarm)
                 return SkipNextResult.NoUpcomingAlarm;
 
-            if (regular.Alarm.IsRepeating)
-                AlarmOccurrenceService.AddSkip(regular.Alarm, regular.Occurrence!.Value.Date, now, zone);
+            if (alarm.IsRepeating)
+                AlarmOccurrenceService.AddSkip(alarm, next.Occurrence!.Value.Date, now, zone);
             else
-                regular.Alarm.Enabled = false;
+                alarm.Enabled = false;
             await repository.SaveAsync(alarms);
             if (reconciler is not null)
             {
@@ -219,6 +230,26 @@ public sealed class AlarmCoordinator
         {
             gate.Release();
         }
+    }
+
+    private static (AlarmDefinition? Alarm, AlarmOccurrence? Occurrence, AlarmRegistrationEntry? Snooze) FindNextAlarm(
+        IReadOnlyList<AlarmDefinition> alarms, IReadOnlyList<AlarmRegistrationEntry> registrations,
+        DateTimeOffset now, TimeZoneInfo zone)
+    {
+        var regular = alarms.Select(alarm => (Alarm: alarm,
+                Occurrence: AlarmOccurrenceService.GetNextOccurrence(alarm, now, zone)))
+            .Where(item => item.Occurrence is not null)
+            .OrderBy(item => item.Occurrence!.Value.Instant).ThenBy(item => item.Alarm.Id)
+            .FirstOrDefault();
+        var snooze = registrations.Where(entry => entry.Kind == AlarmRegistrationKind.Snooze &&
+                entry.State == AlarmRegistrationState.Desired && entry.TriggerAt > now &&
+                IsCurrentDelivery(alarms, entry, zone))
+            .OrderBy(entry => entry.TriggerAt).ThenBy(entry => entry.AlarmId).ThenBy(entry => entry.RegistrationId)
+            .FirstOrDefault();
+
+        return snooze is not null && (regular.Alarm is null || snooze.TriggerAt < regular.Occurrence!.Value.Instant)
+            ? (null, null, snooze)
+            : (regular.Alarm, regular.Occurrence, null);
     }
 
     internal async Task ReconcileRegularAsync(AlarmRegistrationReconciler reconciler, TimeZoneInfo timeZone)
