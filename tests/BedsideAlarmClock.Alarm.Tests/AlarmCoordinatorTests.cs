@@ -264,6 +264,78 @@ public sealed class AlarmCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task SkipNextSelectsOnlyTheEarliestAndPreservesRepeatedSkips()
+    {
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var scheduler = new TestScheduler();
+        var clock = new FixedTimeProvider();
+        var reconciler = new AlarmRegistrationReconciler(store, scheduler, clock);
+        var coordinator = new AlarmCoordinator(new AlarmRepository(Path.Combine(directory, "alarms.json")),
+            reconciler, () => TimeZoneInfo.Utc);
+        var repeating = new AlarmDefinition
+        {
+            Id = Guid.NewGuid(), Hour = 7, Minute = 30, Enabled = true,
+            IsRepeating = true, Days = AlarmDays.Thursday
+        };
+        var once = Once(8);
+        await coordinator.AddAsync(repeating);
+        await coordinator.AddAsync(once);
+
+        Assert.Equal(SkipNextResult.Skipped, await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false, store, scheduler));
+        var saved = await coordinator.LoadAsync();
+        Assert.Equal(new DateOnly(2025, 1, 2), saved.Single(item => item.Id == repeating.Id).SkipDate);
+        Assert.True(saved.Single(item => item.Id == once.Id).Enabled);
+
+        Assert.Equal(SkipNextResult.Skipped, await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false, store, scheduler));
+        Assert.False((await coordinator.LoadAsync()).Single(item => item.Id == once.Id).Enabled);
+        Assert.Equal(SkipNextResult.Skipped, await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false, store, scheduler));
+        var after = (await coordinator.LoadAsync()).Single(item => item.Id == repeating.Id);
+        Assert.Equal(new DateOnly(2025, 1, 2), after.SkipDate);
+        Assert.Equal(new DateOnly(2025, 1, 9), Assert.Single(after.AdditionalSkipDates!));
+        Assert.Equal(DateTimeOffset.Parse("2025-01-16T07:30:00Z"), Assert.Single(scheduler.Registered).Value);
+
+        AlarmOccurrenceService.UndoNextSkip(after, clock.GetUtcNow(), TimeZoneInfo.Utc);
+        Assert.Equal(new DateOnly(2025, 1, 9), after.SkipDate);
+        Assert.Null(after.AdditionalSkipDates);
+    }
+
+    [Fact]
+    public async Task SkipNextIsBlockedForAnActiveOrDueAlarm()
+    {
+        var coordinator = CreateCoordinator();
+        await coordinator.AddAsync(Once());
+        var clock = new FixedTimeProvider();
+        Assert.Equal(SkipNextResult.AlarmActive,
+            await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => true));
+        Assert.True(Assert.Single(await coordinator.LoadAsync()).Enabled);
+
+        var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
+        var alarm = Assert.Single(await coordinator.LoadAsync());
+        await store.SaveAsync([new AlarmRegistrationEntry
+        {
+            AlarmId = alarm.Id, RegistrationId = Guid.NewGuid(), Kind = AlarmRegistrationKind.Regular,
+            State = AlarmRegistrationState.Desired, TriggerAt = new DateTimeOffset(2025, 1, 2, 7, 30, 0, TimeSpan.Zero)
+        }]);
+        var dueClock = new AtTimeProvider(new DateTimeOffset(2025, 1, 2, 7, 30, 0, TimeSpan.Zero));
+        Assert.Equal(SkipNextResult.AlarmActive,
+            await coordinator.SkipNextAsync(dueClock, TimeZoneInfo.Utc, () => false, store, new TestScheduler()));
+        Assert.True(Assert.Single(await coordinator.LoadAsync()).Enabled);
+    }
+
+    [Fact]
+    public async Task SkipNextAffectsOnlyOneOfTwoAlarmsAtTheSameTime()
+    {
+        var coordinator = CreateCoordinator();
+        await coordinator.AddAsync(Once());
+        await coordinator.AddAsync(Once());
+        Assert.Equal(SkipNextResult.Skipped,
+            await coordinator.SkipNextAsync(new FixedTimeProvider(), TimeZoneInfo.Utc, () => false));
+        var alarms = await coordinator.LoadAsync();
+        Assert.Single(alarms, alarm => alarm.Enabled);
+        Assert.Single(alarms, alarm => !alarm.Enabled);
+    }
+
+    [Fact]
     public async Task DueRegistrationReportsSavedEditWithoutDroppingUnresolvedOccurrence()
     {
         var store = new AlarmRegistrationRepository(Path.Combine(directory, "registrations.json"));
@@ -506,6 +578,11 @@ public sealed class AlarmCoordinatorTests : IDisposable
     private sealed class FixedTimeProvider : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.Parse("2025-01-01T00:00:00Z");
+    }
+
+    private sealed class AtTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private sealed class BlockingStore(AlarmRegistrationRepository repository) : IAlarmRegistrationStore

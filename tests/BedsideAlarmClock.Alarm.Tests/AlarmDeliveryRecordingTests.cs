@@ -923,6 +923,35 @@ public sealed class AlarmDeliveryRecordingTests : IDisposable
         return (coordinator, store, snooze.Registration, clock, scheduler);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SkipNextCancelsOnlyThePendingSnoozeAndRejectsLateDelivery(bool failCancel)
+    {
+        var (coordinator, store, snooze, clock, scheduler) = await SetupSnoozeAsync();
+        clock.Now = clock.Now.AddMinutes(-1);
+        var later = new AlarmDefinition
+        {
+            Id = Guid.NewGuid(), Hour = 8, Enabled = true,
+            OnceDate = new DateOnly(2025, 1, 2)
+        };
+        await coordinator.AddAsync(later);
+        scheduler.FailCancel = failCancel;
+        if (failCancel)
+            await Assert.ThrowsAsync<AlarmScheduleException>(() =>
+                coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false, store, scheduler));
+        else
+            Assert.Equal(SkipNextResult.Skipped,
+                await coordinator.SkipNextAsync(clock, TimeZoneInfo.Utc, () => false, store, scheduler));
+
+        var entry = Assert.Single(await store.LoadExistingAsync(), item => item.Registration == snooze);
+        Assert.Equal(AlarmRegistrationState.PendingCancellation, entry.State);
+        Assert.Equal(DeliveryRecordResult.Stale,
+            await coordinator.RecordSnoozeDeliveryAsync(store, snooze, entry.TriggerAt, TimeZoneInfo.Utc));
+        Assert.Equal(failCancel, scheduler.Registered.ContainsKey(snooze));
+        Assert.True((await coordinator.LoadAsync()).Single(item => item.Id == later.Id).Enabled);
+    }
+
     [Fact]
     public async Task DismissingASnoozeCancelsOnlyItsUncertainFollowUp()
     {

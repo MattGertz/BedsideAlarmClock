@@ -38,8 +38,27 @@ public static class AlarmOccurrenceService
         if (!alarm.IsRepeating)
             throw new InvalidOperationException("Only repeating alarms can skip an occurrence.");
         var occurrence = FindNext(alarm, after, timeZone, honorSkip: false);
-        alarm.SkipDate = occurrence?.Date;
-        return alarm.SkipDate;
+        if (occurrence is { } next)
+            AddSkip(alarm, next.Date, after, timeZone);
+        return occurrence?.Date;
+    }
+
+    internal static IReadOnlyList<DateOnly> PendingSkips(AlarmDefinition alarm, DateTimeOffset after, TimeZoneInfo timeZone) =>
+        (alarm.SkipDate is { } first ? new[] { first } : Array.Empty<DateOnly>())
+            .Concat(alarm.AdditionalSkipDates ?? [])
+            .Where(date => Resolve(date, alarm.Hour, alarm.Minute, timeZone) is { } instant && instant > after)
+            .OrderBy(date => date).ToArray();
+
+    internal static void AddSkip(AlarmDefinition alarm, DateOnly date, DateTimeOffset after, TimeZoneInfo timeZone) =>
+        SetSkips(alarm, PendingSkips(alarm, after, timeZone).Append(date).Distinct().OrderBy(item => item).ToArray());
+
+    internal static void UndoNextSkip(AlarmDefinition alarm, DateTimeOffset after, TimeZoneInfo timeZone) =>
+        SetSkips(alarm, PendingSkips(alarm, after, timeZone).Skip(1).ToArray());
+
+    private static void SetSkips(AlarmDefinition alarm, IReadOnlyList<DateOnly> dates)
+    {
+        alarm.SkipDate = dates.Count > 0 ? dates[0] : null;
+        alarm.AdditionalSkipDates = dates.Count > 1 ? dates.Skip(1).ToList() : null;
     }
 
     private static AlarmOccurrence? FindNext(
@@ -56,7 +75,7 @@ public static class AlarmOccurrenceService
         while (true)
         {
             if ((alarm.Days & AlarmDefinition.DayFlag(current)) != 0 &&
-                (!honorSkip || alarm.SkipDate != current))
+                (!honorSkip || (alarm.SkipDate != current && alarm.AdditionalSkipDates?.Contains(current) != true)))
             {
                 var instant = Resolve(current, alarm.Hour, alarm.Minute, timeZone);
                 if (instant is { } value && value > after)

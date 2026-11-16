@@ -26,6 +26,8 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
     private AudioFocusRequestClass? focusRequest;
     private PowerManager.WakeLock? wakeLock;
     internal static AlarmPlaybackService? Current { get; private set; }
+    internal static event Action? AlarmDeliveryStarting;
+    internal static bool IsAlarmProcessing => Current is { } service && !service.active.IsEmpty;
     internal event Action? ActiveAlarmsChanged;
 
     private AlarmCoordinator Coordinator => IPlatformApplication.Current!.Services.GetRequiredService<AlarmCoordinator>();
@@ -95,6 +97,7 @@ public sealed class AlarmPlaybackService : Service, AudioManager.IOnAudioFocusCh
         var recoveryNeeded = false;
         try
         {
+            AlarmDeliveryStarting?.Invoke();
             var zone = TimeZoneInfo.Local;
             if (receivedAtMilliseconds <= 0)
                 throw new InvalidDataException("The alarm receipt time is missing.");

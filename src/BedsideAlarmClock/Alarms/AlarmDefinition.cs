@@ -35,6 +35,8 @@ public sealed class AlarmDefinition
     public DateOnly? OnceDate { get; set; }
     [JsonRequired]
     public DateOnly? SkipDate { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<DateOnly>? AdditionalSkipDates { get; set; }
     public string? SoundUri { get; set; }
     public double Volume { get; set; } = 1;
     public int? SnoozeMinutes { get; set; } = 10;
@@ -63,8 +65,13 @@ public sealed class AlarmDefinition
                 throw new InvalidDataException("A repeating alarm requires days and no once date.");
             if (SkipDate is { } skip && (Days & DayFlag(skip)) == 0)
                 throw new InvalidDataException("A skip date must be on a selected day.");
+            if (AdditionalSkipDates is { Count: > 0 } dates &&
+                (SkipDate is null || dates.Distinct().Count() != dates.Count ||
+                 dates.Contains(SkipDate.Value) || dates.Any(date => (Days & DayFlag(date)) == 0)))
+                throw new InvalidDataException("Additional skip dates must be distinct selected days.");
         }
-        else if (Days != AlarmDays.None || OnceDate is null || SkipDate is not null)
+        else if (Days != AlarmDays.None || OnceDate is null || SkipDate is not null ||
+                 AdditionalSkipDates is { Count: > 0 })
         {
             throw new InvalidDataException("A once alarm requires a date, no days, and no skip date.");
         }

@@ -234,6 +234,7 @@ public partial class AlarmEditPage : ContentPage
                     ? AlarmPresentation.NextOnceDate(_hour, _minute)
                     : _original.OnceDate;
             updated.SkipDate = changedSchedule || !_isRepeating ? null : _original.SkipDate;
+            updated.AdditionalSkipDates = changedSchedule || !_isRepeating ? null : _original.AdditionalSkipDates?.ToList();
             updated.SoundUri = _soundUri;
             updated.Volume = Math.Round(VolumeSlider.Value) / 100;
             updated.SnoozeMinutes = snoozeMinutes;

@@ -23,6 +23,10 @@ the only alarm during development.
   snooze controls.
 - Snooze defaults to ten minutes, can be disabled, and does not change the
   underlying recurring schedule.
+- Touching the clock reveals a red SKIP button for three seconds. It skips
+  only the next upcoming delivery: an occurrence of a repeating alarm, a
+  one-time alarm, or a pending snooze. Repeated presses can skip additional
+  occurrences. The button is unavailable while an alarm is being delivered.
 - Offer system sounds and a user-selected WAV or MP3 file on the phone.
   If the chosen sound cannot play, promptly use a system alarm sound and
   report the problem. A system default can itself be unavailable or silent,

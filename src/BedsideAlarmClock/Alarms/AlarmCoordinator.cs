@@ -68,6 +68,13 @@ internal enum SnoozeResult
     AlreadyCompleted
 }
 
+internal enum SkipNextResult
+{
+    Skipped,
+    NoUpcomingAlarm,
+    AlarmActive
+}
+
 internal enum RecoveryClockStatus
 {
     Uncertain,
@@ -149,6 +156,70 @@ public sealed class AlarmCoordinator
 
     public Task<IReadOnlyList<AlarmDefinition>> DeleteAsync(AlarmDefinition expected) =>
         MutateAsync(alarms => alarms.RemoveAt(FindUnchanged(alarms, expected)));
+
+    internal async Task<SkipNextResult> SkipNextAsync(
+        TimeProvider clock, TimeZoneInfo zone, Func<bool> isAlarmActive,
+        IAlarmRegistrationStore? store = null, IAlarmRegistrationScheduler? scheduler = null)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(zone);
+        ArgumentNullException.ThrowIfNull(isAlarmActive);
+        if ((store is null) != (scheduler is null))
+            throw new ArgumentException("A registration store and scheduler must be provided together.");
+        await gate.WaitAsync();
+        try
+        {
+            var alarms = (await repository.LoadAsync()).ToList();
+            var registrations = store is null
+                ? Array.Empty<AlarmRegistrationEntry>()
+                : (await store.LoadAsync()).ToArray();
+            AlarmRegistrationRepository.Validate(registrations);
+            var now = clock.GetUtcNow();
+            if (isAlarmActive() || registrations.Any(entry =>
+                entry.State == AlarmRegistrationState.Desired && entry.TriggerAt <= now &&
+                IsCurrentDelivery(alarms, entry, zone)))
+                return SkipNextResult.AlarmActive;
+
+            var regular = alarms.Select(alarm => (Alarm: alarm,
+                    Occurrence: AlarmOccurrenceService.GetNextOccurrence(alarm, now, zone)))
+                .Where(item => item.Occurrence is not null)
+                .OrderBy(item => item.Occurrence!.Value.Instant).ThenBy(item => item.Alarm.Id)
+                .FirstOrDefault();
+            var snooze = registrations.Where(entry => entry.Kind == AlarmRegistrationKind.Snooze &&
+                    entry.State == AlarmRegistrationState.Desired && entry.TriggerAt > now &&
+                    IsCurrentDelivery(alarms, entry, zone))
+                .OrderBy(entry => entry.TriggerAt).ThenBy(entry => entry.AlarmId).ThenBy(entry => entry.RegistrationId)
+                .FirstOrDefault();
+
+            if (snooze is not null && (regular.Alarm is null ||
+                snooze.TriggerAt < regular.Occurrence!.Value.Instant))
+            {
+                snooze.State = AlarmRegistrationState.PendingCancellation;
+                await store!.SaveAsync(registrations);
+                try { scheduler!.Cancel(snooze.Registration); }
+                catch (Exception ex) { throw new AlarmScheduleException(ex); }
+                return SkipNextResult.Skipped;
+            }
+            if (regular.Alarm is null)
+                return SkipNextResult.NoUpcomingAlarm;
+
+            if (regular.Alarm.IsRepeating)
+                AlarmOccurrenceService.AddSkip(regular.Alarm, regular.Occurrence!.Value.Date, now, zone);
+            else
+                regular.Alarm.Enabled = false;
+            await repository.SaveAsync(alarms);
+            if (reconciler is not null)
+            {
+                try { await reconciler.ReconcileAllAsync(alarms, zone); }
+                catch (Exception ex) { throw new AlarmScheduleException(ex); }
+            }
+            return SkipNextResult.Skipped;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
 
     internal async Task ReconcileRegularAsync(AlarmRegistrationReconciler reconciler, TimeZoneInfo timeZone)
     {
@@ -1070,6 +1141,7 @@ public sealed class AlarmCoordinator
         first.Enabled == second.Enabled && first.IsRepeating == second.IsRepeating &&
         first.Days == second.Days && first.Label == second.Label &&
         first.OnceDate == second.OnceDate && first.SkipDate == second.SkipDate &&
+        (first.AdditionalSkipDates ?? []).SequenceEqual(second.AdditionalSkipDates ?? []) &&
         first.SoundUri == second.SoundUri && first.Volume == second.Volume &&
         first.SnoozeMinutes == second.SnoozeMinutes;
 }

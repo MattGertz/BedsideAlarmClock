@@ -1,4 +1,5 @@
 using BedsideAlarmClock.Display;
+using BedsideAlarmClock.Alarms;
 using BedsideAlarmClock.Platforms.Android;
 
 namespace BedsideAlarmClock;
@@ -7,7 +8,10 @@ public partial class MainPage : ContentPage
 {
     private readonly IDispatcherTimer _clockTimer;
     private readonly IDispatcherTimer _pixelShiftTimer;
+    private readonly IDispatcherTimer _skipTimer;
     private readonly IClockBrightness _brightness;
+    private readonly AlarmCoordinator _alarms;
+    private bool _skipBusy;
     private int _pixelShiftPosition;
     private string? _lastTimeText;
     private string? _lastDateText;
@@ -18,6 +22,7 @@ public partial class MainPage : ContentPage
         InitializeComponent();
 
         _brightness = IPlatformApplication.Current!.Services.GetRequiredService<IClockBrightness>();
+        _alarms = IPlatformApplication.Current!.Services.GetRequiredService<AlarmCoordinator>();
         _clockTimer = Dispatcher.CreateTimer();
         _clockTimer.Interval = TimeSpan.FromSeconds(1);
         _clockTimer.IsRepeating = true;
@@ -27,6 +32,11 @@ public partial class MainPage : ContentPage
         _pixelShiftTimer.Interval = TimeSpan.FromMinutes(2);
         _pixelShiftTimer.IsRepeating = true;
         _pixelShiftTimer.Tick += OnPixelShiftTimerTick;
+
+        _skipTimer = Dispatcher.CreateTimer();
+        _skipTimer.Interval = TimeSpan.FromSeconds(3);
+        _skipTimer.IsRepeating = false;
+        _skipTimer.Tick += (_, _) => HideSkipButton();
     }
 
     protected override void OnAppearing()
@@ -43,6 +53,8 @@ public partial class MainPage : ContentPage
 
     public void ResumeClock()
     {
+        AlarmPlaybackService.AlarmDeliveryStarting -= OnAlarmDeliveryStarting;
+        AlarmPlaybackService.AlarmDeliveryStarting += OnAlarmDeliveryStarting;
         var font = Preferences.Default.Get(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[0]);
         TimeLabel.FontFamily = ClockSettings.FontFamily(font);
         DateLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowDateKey, true);
@@ -55,6 +67,8 @@ public partial class MainPage : ContentPage
 
     public void PauseClock()
     {
+        AlarmPlaybackService.AlarmDeliveryStarting -= OnAlarmDeliveryStarting;
+        HideSkipButton();
         _clockTimer.Stop();
         _pixelShiftTimer.Stop();
         _brightness.Deactivate();
@@ -101,6 +115,59 @@ public partial class MainPage : ContentPage
     private void OnClockTimerTick(object? sender, EventArgs e)
     {
         RefreshClock();
+        if (AlarmPlaybackService.IsAlarmProcessing) HideSkipButton();
+    }
+
+    internal bool IsSkipButtonVisible => SkipButton.IsVisible;
+
+    internal void OnClockScreenTouched()
+    {
+        if (_skipBusy || AlarmPlaybackService.IsAlarmProcessing) return;
+        SkipButton.IsVisible = true;
+        _skipTimer.Stop();
+        _skipTimer.Start();
+    }
+
+    private void OnAlarmDeliveryStarting() => Dispatcher.Dispatch(HideSkipButton);
+
+    private void HideSkipButton()
+    {
+        _skipTimer.Stop();
+        SkipButton.IsVisible = false;
+    }
+
+    private async void OnSkipClicked(object? sender, EventArgs e)
+    {
+        HideSkipButton();
+        if (_skipBusy || AlarmPlaybackService.IsAlarmProcessing) return;
+        _skipBusy = true;
+        try
+        {
+#if ALARM_DELIVERY_EXPERIMENT
+            var services = IPlatformApplication.Current!.Services;
+            var result = await _alarms.SkipNextAsync(TimeProvider.System, TimeZoneInfo.Local,
+                () => AlarmPlaybackService.IsAlarmProcessing,
+                services.GetRequiredService<AlarmRegistrationRepository>(),
+                services.GetRequiredService<AndroidAlarmScheduler>());
+#else
+            var result = await _alarms.SkipNextAsync(TimeProvider.System, TimeZoneInfo.Local,
+                () => AlarmPlaybackService.IsAlarmProcessing);
+#endif
+            if (result == SkipNextResult.NoUpcomingAlarm)
+                await DisplayAlertAsync("No upcoming alarm", "There is no upcoming alarm to skip.", "OK");
+        }
+        catch (AlarmScheduleException ex)
+        {
+            await DisplayAlertAsync("Alarm saved; scheduling uncertain", ex.Message, "OK");
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Unable to skip alarm", ex.Message, "OK");
+        }
+        finally
+        {
+            _skipBusy = false;
+        }
     }
 
     private void OnClockLayoutSizeChanged(object? sender, EventArgs e)

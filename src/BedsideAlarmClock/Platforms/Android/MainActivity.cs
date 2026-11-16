@@ -93,7 +93,7 @@ public class MainActivity : MauiAppCompatActivity
             return base.DispatchTouchEvent(e);
         }
 
-        if (Shell.Current?.CurrentPage is not MainPage || Window?.DecorView is not { } decor)
+        if (Shell.Current?.CurrentPage is not MainPage clockPage || Window?.DecorView is not { } decor)
         {
             FinishBrightnessGesture();
             return base.DispatchTouchEvent(e);
@@ -132,14 +132,25 @@ public class MainActivity : MauiAppCompatActivity
                 break;
 
             case MotionEventActions.Up:
-            case MotionEventActions.Cancel:
                 var consumed = _adjustingBrightness;
+                var skipWasVisible = clockPage.IsSkipButtonVisible;
                 FinishBrightnessGesture();
                 if (consumed)
                 {
+                    clockPage.OnClockScreenTouched();
                     return true;
                 }
 
+                var handled = base.DispatchTouchEvent(e);
+                if (Shell.Current?.CurrentPage == clockPage &&
+                    !(skipWasVisible && !clockPage.IsSkipButtonVisible))
+                    clockPage.OnClockScreenTouched();
+                return handled;
+
+            case MotionEventActions.Cancel:
+                var canceled = _adjustingBrightness;
+                FinishBrightnessGesture();
+                if (canceled) return true;
                 break;
 
             case MotionEventActions.PointerDown:

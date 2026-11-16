@@ -170,7 +170,7 @@ public partial class AlarmListPage : ContentPage
             {
                 info.Children.Add(new Label
                 {
-                    Text = $"Skipped: {AlarmPresentation.DateText(alarm.SkipDate!.Value)}",
+                    Text = $"Skipped: {string.Join(", ", AlarmOccurrenceService.PendingSkips(alarm, DateTimeOffset.Now, TimeZoneInfo.Local).Select(AlarmPresentation.DateText))}",
                     FontSize = 14,
                     TextColor = Color.FromArgb("#FFD180")
                 });
@@ -224,9 +224,7 @@ public partial class AlarmListPage : ContentPage
 
     private static bool HasPendingSkip(AlarmDefinition alarm)
     {
-        if (alarm.SkipDate is not { } date) return false;
-        var nominal = AlarmPresentation.Copy(alarm);
-        return AlarmOccurrenceService.SetSkipToNextOccurrence(nominal, DateTimeOffset.Now, TimeZoneInfo.Local) == date;
+        return AlarmOccurrenceService.PendingSkips(alarm, DateTimeOffset.Now, TimeZoneInfo.Local).Count > 0;
     }
 
     private async Task SetEnabledAsync(AlarmDefinition alarm, bool enabled)
@@ -247,7 +245,7 @@ public partial class AlarmListPage : ContentPage
         var updated = AlarmPresentation.Copy(alarm);
         if (undoSkip)
         {
-            updated.SkipDate = null;
+            AlarmOccurrenceService.UndoNextSkip(updated, DateTimeOffset.Now, TimeZoneInfo.Local);
         }
         else
         {

@@ -30,6 +30,17 @@
             </VerticalStackLayout>
         </Grid>
 
+        <Button x:Name="SkipButton"
+                Text="SKIP"
+                FontSize="13"
+                BackgroundColor="#A62222"
+                TextColor="White"
+                HorizontalOptions="Start"
+                VerticalOptions="End"
+                IsVisible="False"
+                Clicked="OnSkipClicked"
+                SemanticProperties.Hint="Skip the next upcoming alarm" />
+
         <HorizontalStackLayout HorizontalOptions="End"
                                VerticalOptions="End">
             <Button Text="Alarms"
