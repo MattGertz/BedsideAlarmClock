@@ -96,10 +96,8 @@ did not establish audibility.
 In earlier runs, the service diagnostics reported the alarm-clock
 foreground-start exemption while denying the while-in-use capability used for
 audio control. This is a result for that emulator, not all Android devices.
-The normal clock build remains setup-only. An experimental build now connects
-a delivery receiver, playback service and player; see the Phase 4 plan for
-its validation status and limitations. Neither build should be relied on as
-the only alarm.
+The normal clock build connects a delivery receiver, playback service and
+player; see the Phase 4 plan for its validation status and limitations.
 
 The probe makes real alarm-clock registrations on the selected emulator.
 It does not test actual audibility, recovery, UI integration, or Samsung

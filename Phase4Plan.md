@@ -1,9 +1,9 @@
 # Phase 4: Native alarm delivery plan
 
-Phase 4 adds Android scheduling, alarm audio, presentation, dismissal, and
-snooze. Until delivery and essential recovery are implemented and verified,
-the app must continue to say that alarms cannot ring. Do not rely on it as
-the only alarm during development.
+Phase 4 added Android scheduling, alarm audio, presentation, dismissal, and
+snooze. The owner has completed field testing and enabled delivery in normal
+builds. The remaining notes include historical development decisions and
+known limitations.
 
 ## Agreed behavior
 
@@ -96,13 +96,12 @@ prerequisites for trusting this app as a bedside alarm.
 
 ## Current progress
 
-The delivery path is **experimental and disabled in normal builds**. To build
-it for investigation, pass `-p:EnableAlarmDeliveryExperiment=true`. The
-experimental app connects save-time scheduling, a receiver, a media-playback
+The delivery path is enabled in normal builds. The app connects save-time
+scheduling, a receiver, a media-playback
 foreground service, alarm controls, snooze, sound selection and recovery.
 It requests audio focus on a best-effort basis, uses alarm audio attributes,
-and does not change system volume. It is not ready to be relied on as the
-only alarm.
+and does not change system volume. The owner reports successful field testing,
+including recurring alarms.
 
 On an isolated Android 15/API 35 emulator targeting API 36, regular and
 snoozed deliveries, process death, locked-screen controls, reboot and
@@ -112,7 +111,7 @@ the next regular occurrence was registered. A release build showed advancing
 player position and a working snooze action. Host audio was disabled, so none
 of these results proves audibility.
 
-The experimental app checks exact-alarm, notification and full-screen access
+The app checks exact-alarm, notification and full-screen access
 in Settings and provides an in-app route to active controls. On the isolated
 emulator, that route opened the controls and dismissed a sounding alarm with
 notification permission revoked. A regular alarm and a snooze also overlapped
@@ -167,7 +166,7 @@ Before-first-unlock delivery is not supported or verified.
 ### Historical groundwork
 
 The entries below describe earlier stages of implementation, not the current
-experimental build. References to unused or disconnected components and
+app. References to unused or disconnected components and
 missing features refer to those earlier stages.
 
 - Checkpoint 1: the decisions above are recorded. Direct Boot and actual

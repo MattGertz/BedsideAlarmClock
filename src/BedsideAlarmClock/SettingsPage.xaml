@@ -62,7 +62,7 @@
                     TitleColor="#858585"
                     SemanticProperties.Description="Clock font" />
         </VerticalStackLayout>
-        <VerticalStackLayout x:Name="AlarmPermissionSection" IsVisible="False" Spacing="8">
+        <VerticalStackLayout Spacing="8">
             <Label Text="Alarm permissions" FontSize="18" TextColor="#D8D8D8" />
             <Label x:Name="AlarmPermissionStatus" FontSize="14" TextColor="#FFD180" />
             <Button Text="Notification settings" Clicked="OnNotificationSettingsClicked" />

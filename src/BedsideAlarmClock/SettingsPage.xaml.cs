@@ -16,20 +16,14 @@ public partial class SettingsPage : ContentPage
         ShowSecondsSwitch.Toggled += OnShowSecondsToggled;
         ShowDateSwitch.Toggled += OnShowDateToggled;
         ClockFontPicker.SelectedIndexChanged += OnClockFontChanged;
-#if ALARM_DELIVERY_EXPERIMENT
-        AlarmPermissionSection.IsVisible = true;
-#endif
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
-#if ALARM_DELIVERY_EXPERIMENT
         RefreshAlarmPermissions();
-#endif
     }
 
-#if ALARM_DELIVERY_EXPERIMENT
     internal void RefreshAlarmPermissions()
     {
         try
@@ -45,8 +39,6 @@ public partial class SettingsPage : ContentPage
             AlarmPermissionStatus.Text = $"Unable to check alarm permissions: {ex.Message}";
         }
     }
-#endif
-
     private async void OnNotificationSettingsClicked(object? sender, EventArgs e) =>
         await OpenAlarmSettingsAsync(() => Platforms.Android.AlarmPermissions.OpenNotifications(global::Android.App.Application.Context));
 

@@ -19,7 +19,6 @@ public static class MauiProgram
 		builder.Services.AddSingleton<ClockBrightness>();
 		builder.Services.AddSingleton<IClockBrightness>(services => services.GetRequiredService<ClockBrightness>());
 		builder.Services.AddSingleton(_ => new AlarmRepository(Path.Combine(FileSystem.AppDataDirectory, "alarms.json")));
-#if ALARM_DELIVERY_EXPERIMENT
 		builder.Services.AddSingleton(_ => new AlarmRegistrationRepository(Path.Combine(FileSystem.AppDataDirectory, "registrations.json")));
 		builder.Services.AddSingleton(_ => new AndroidAlarmScheduler(
 			Android.App.Application.Context, typeof(AlarmDeliveryReceiver), typeof(MainActivity)));
@@ -29,10 +28,6 @@ public static class MauiProgram
 		builder.Services.AddSingleton(services => new AlarmCoordinator(
 			services.GetRequiredService<AlarmRepository>(),
 			services.GetRequiredService<AlarmRegistrationReconciler>(), () => TimeZoneInfo.Local));
-#else
-		builder.Services.AddSingleton<AlarmCoordinator>();
-#endif
-
 #if DEBUG
 		builder.Logging.AddDebug();
 #endif

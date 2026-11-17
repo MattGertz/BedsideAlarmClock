@@ -133,9 +133,7 @@ public sealed class AlarmRecoveryReceiver : BroadcastReceiver
 {
     public override void OnReceive(Context? context, Intent? intent)
     {
-#if ALARM_DELIVERY_EXPERIMENT
         if (context is not null) StartRecovery(context, GoAsync());
-#endif
     }
 
     internal static async void StartRecovery(Context context, PendingResult? pending)
@@ -161,8 +159,6 @@ public sealed class AlarmRecoveryRetryReceiver : BroadcastReceiver
 {
     public override void OnReceive(Context? context, Intent? intent)
     {
-#if ALARM_DELIVERY_EXPERIMENT
         if (context is not null) AlarmRecoveryReceiver.StartRecovery(context, GoAsync());
-#endif
     }
 }

@@ -1,15 +1,13 @@
 # Alarm model API
 
-**Current integration:** normal builds remain setup-only. With
-`-p:EnableAlarmDeliveryExperiment=true`, the Android app connects the
-coordinator, scheduler, receiver, foreground player, controls, snooze and
-recovery. Experimental delivery is not yet a reliable replacement for a
-backup alarm. See [Phase 4 progress](../../../Phase4Plan.md#current-progress)
-for tested scenarios and unresolved risks.
+**Current integration:** normal builds connect the coordinator, scheduler,
+receiver, foreground player, controls, snooze and recovery. See
+[Phase 4 progress](../../../Phase4Plan.md#current-progress) for tested
+scenarios and known limitations.
 
 The descriptions below document the original groundwork and its contracts.
 References to unused or disconnected components describe that earlier stage,
-not the current experimental integration.
+not the current integration.
 
 `AlarmDefinition.Validate()` throws `InvalidDataException` for invalid data.
 IDs must be nonempty and unique in a repository. Times are 00:00–23:59;

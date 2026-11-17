@@ -162,12 +162,8 @@ public partial class MainPage : ContentPage
         var version = ++_nextAlarmVersion;
         try
         {
-#if ALARM_DELIVERY_EXPERIMENT
             var store = IPlatformApplication.Current!.Services.GetRequiredService<AlarmRegistrationRepository>();
             var next = await _alarms.GetNextAlarmAsync(TimeProvider.System, TimeZoneInfo.Local, store);
-#else
-            var next = await _alarms.GetNextAlarmAsync(TimeProvider.System, TimeZoneInfo.Local);
-#endif
             if (!_clockActive || version != _nextAlarmVersion) return false;
             _nextAlarm = next;
             _nextAlarmRefreshAt = DateTimeOffset.UtcNow.AddSeconds(15);
@@ -266,16 +262,11 @@ public partial class MainPage : ContentPage
         _skipBusy = true;
         try
         {
-#if ALARM_DELIVERY_EXPERIMENT
             var services = IPlatformApplication.Current!.Services;
             var result = await _alarms.SkipNextAsync(TimeProvider.System, TimeZoneInfo.Local,
                 () => AlarmPlaybackService.IsAlarmProcessing,
                 services.GetRequiredService<AlarmRegistrationRepository>(),
                 services.GetRequiredService<AndroidAlarmScheduler>());
-#else
-            var result = await _alarms.SkipNextAsync(TimeProvider.System, TimeZoneInfo.Local,
-                () => AlarmPlaybackService.IsAlarmProcessing);
-#endif
             if (result == SkipNextResult.NoUpcomingAlarm)
                 await DisplayAlertAsync("No upcoming alarm", "There is no upcoming alarm to skip.", "OK");
         }

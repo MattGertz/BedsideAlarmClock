@@ -176,7 +176,7 @@ Phase 1 will target `net10.0-android` only. Windows compilation is intentionally
 - The clock's serif and monospace options use bundled Noto Serif and Noto Sans Mono fonts to avoid device-specific system font mappings. The fonts are distributed under the SIL Open Font License, included alongside the font files.
 - Pixel shifting reduces static exposure but cannot guarantee prevention of OLED burn-in. No additional dimming overlay is implemented.
 - The user verified that brightness returns to normal outside the clock and that the minimum is satisfactory in a dark room.
-- Notifications and other activities may temporarily cover or pause the clock; returning refreshes the time and restores clock-only brightness and keep-awake behavior. The clock does not automatically reopen after a device reboot or update. Alarm scheduling and reboot recovery are future phases and are not yet implemented.
+- Notifications and other activities may temporarily cover or pause the clock; returning refreshes the time and restores clock-only brightness and keep-awake behavior. The clock does not automatically reopen after a device reboot or update. Alarm scheduling and recovery run independently of the visible clock.
 - On an isolated emulator, the notification shade and a separate Settings activity were opened and dismissed; after return, the clock advanced, its window brightness and keep-awake flag were restored, and a subsequent two-minute pixel shift moved 48 physical pixels. Real phone calls, overnight operation, and reboot recovery have not been verified by this test.
 
 ## Phase 3 alarm setup

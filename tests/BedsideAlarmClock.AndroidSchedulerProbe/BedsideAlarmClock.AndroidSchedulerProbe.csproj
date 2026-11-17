@@ -9,6 +9,7 @@
     <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);ANDROID_SCHEDULER_PROBE</DefineConstants>
     <AndroidManifest Condition="'$(ProbeExactPermission)' == 'schedule'">Properties\DeniedManifest.xml</AndroidManifest>
   </PropertyGroup>
   <ItemGroup>

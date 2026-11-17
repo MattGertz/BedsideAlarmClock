@@ -11,9 +11,7 @@ public partial class AlarmListPage : ContentPage
     private (DateOnly Date, string Status) _displayState;
     private bool _busy;
     private bool _loaded;
-#if ALARM_DELIVERY_EXPERIMENT
     private IReadOnlyList<AlarmRegistrationEntry> _reports = [];
-#endif
 
     public AlarmListPage()
     {
@@ -27,15 +25,10 @@ public partial class AlarmListPage : ContentPage
             if (_loaded && !_busy && DisplayState() != _displayState) Render();
         };
         AddButton.IsEnabled = false;
-#if ALARM_DELIVERY_EXPERIMENT
-        DeliveryStatus.Text = "Experimental alarm delivery: keep a backup alarm.";
-        ActiveControlsButton.IsVisible = true;
-#endif
     }
 
     private async void OnActiveControlsClicked(object? sender, EventArgs e)
     {
-#if ALARM_DELIVERY_EXPERIMENT
         if (Platforms.Android.AlarmPlaybackService.Current?.GetActiveAlarms().Count > 0)
         {
             try
@@ -51,7 +44,6 @@ public partial class AlarmListPage : ContentPage
             }
             return;
         }
-#endif
         await DisplayAlertAsync("Active alarms", "There are no active alarms.", "OK");
     }
 
@@ -75,10 +67,8 @@ public partial class AlarmListPage : ContentPage
         try
         {
             _alarms = await _coordinator.LoadAsync();
-#if ALARM_DELIVERY_EXPERIMENT
             _reports = await _coordinator.LoadRecoveryReportsAsync(
                 IPlatformApplication.Current!.Services.GetRequiredService<AlarmRegistrationRepository>());
-#endif
             _loaded = true;
             Render();
         }
@@ -111,7 +101,6 @@ public partial class AlarmListPage : ContentPage
     {
         _displayState = DisplayState();
         AlarmRows.Children.Clear();
-#if ALARM_DELIVERY_EXPERIMENT
         foreach (var report in _reports.Where(item =>
             !Preferences.Default.Get($"alarm.report.{item.RegistrationId:N}", false)))
         {
@@ -138,7 +127,6 @@ public partial class AlarmListPage : ContentPage
             row.Children.Add(acknowledge);
             AlarmRows.Children.Add(row);
         }
-#endif
         if (_alarms.Count == 0)
         {
             AlarmRows.Children.Add(new Label

@@ -21,9 +21,6 @@ public partial class AlarmEditPage : ContentPage
     public AlarmEditPage(AlarmDefinition? alarm)
     {
         InitializeComponent();
-#if ALARM_DELIVERY_EXPERIMENT
-        DeliveryStatus.Text = "Experimental alarm delivery: keep a backup alarm.";
-#endif
         _coordinator = IPlatformApplication.Current!.Services.GetRequiredService<AlarmCoordinator>();
         _isNew = alarm is null;
         var initialTime = DateTime.Now.AddMinutes(1);
