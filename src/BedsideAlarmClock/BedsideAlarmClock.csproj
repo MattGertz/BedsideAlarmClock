@@ -38,6 +38,19 @@
 		<SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
 	</PropertyGroup>
 
+	<!-- Release signing: passwords come from environment variables and the keystore lives outside the repo.
+	     Without the keystore the build falls back to the default debug key. -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release' and $(TargetFramework.Contains('-android'))">
+		<AndroidPackageFormat>apk</AndroidPackageFormat>
+		<AndroidSigningKeyStore Condition="'$(AndroidSigningKeyStore)' == ''">$(USERPROFILE)\AndroidKeys\release-key.jks</AndroidSigningKeyStore>
+	</PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)' == 'Release' and $(TargetFramework.Contains('-android')) and Exists('$(AndroidSigningKeyStore)')">
+		<AndroidKeyStore>true</AndroidKeyStore>
+		<AndroidSigningKeyAlias>myapp</AndroidSigningKeyAlias>
+		<AndroidSigningKeyPass>env:ANDROID_KEY_PASSWORD</AndroidSigningKeyPass>
+		<AndroidSigningStorePass>env:ANDROID_KEYSTORE_PASSWORD</AndroidSigningStorePass>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<!-- App Icon -->
 		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#101010" />

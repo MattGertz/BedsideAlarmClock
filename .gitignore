@@ -23,6 +23,9 @@ coverage/
 # Android signing material and local environment
 *.keystore
 *.jks
+*.publishsettings
+keystore.properties
+signing.properties
 local.properties
 
 # OS-generated files
