@@ -64,18 +64,26 @@ public sealed class AlarmRingingActivity : Activity
             if (actionError is not null)
                 content.AddView(new TextView(this) { Text = actionError, TextSize = 16 });
             var dismiss = new global::Android.Widget.Button(this) { Text = "Dismiss" };
-            dismiss.Click += (_, _) => SendAction(registration, AlarmPlaybackService.DismissAction);
+            dismiss.Touch += (_, e) => OnButtonTouch(e, registration, AlarmPlaybackService.DismissAction);
             content.AddView(dismiss);
             if (snoozeMinutes is { } minutes)
             {
                 var snooze = new global::Android.Widget.Button(this) { Text = $"Snooze {minutes} minutes" };
-                snooze.Click += (_, _) => SendAction(registration, AlarmPlaybackService.SnoozeAction);
+                snooze.Touch += (_, e) => OnButtonTouch(e, registration, AlarmPlaybackService.SnoozeAction);
                 content.AddView(snooze);
             }
         }
         var scroll = new global::Android.Widget.ScrollView(this);
         scroll.AddView(content);
         SetContentView(scroll);
+    }
+
+    // Act on touch-down so a sliding finger can't cancel the action.
+    private void OnButtonTouch(global::Android.Views.View.TouchEventArgs e, AlarmRegistration registration, string action)
+    {
+        e.Handled = false;
+        if (e.Event?.ActionMasked == MotionEventActions.Down)
+            SendAction(registration, action);
     }
 
     private void SendAction(AlarmRegistration registration, string action)

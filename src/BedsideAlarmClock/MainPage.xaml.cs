@@ -215,7 +215,7 @@ public partial class MainPage : ContentPage
                 Text = "DISMISS", FontSize = 18, MinimumHeightRequest = 56,
                 MinimumWidthRequest = 140, BackgroundColor = Color.FromArgb("#A62222"), TextColor = Colors.White
             };
-            dismiss.Clicked += (_, _) => SendAlarmAction(registration, AlarmPlaybackService.DismissAction);
+            dismiss.Pressed += (_, _) => SendAlarmAction(registration, AlarmPlaybackService.DismissAction);
             buttons.Add(dismiss);
             if (snoozeMinutes is { } minutes)
             {
@@ -224,7 +224,7 @@ public partial class MainPage : ContentPage
                     Text = $"SNOOZE {minutes} MIN", FontSize = 18, MinimumHeightRequest = 56,
                     MinimumWidthRequest = 140, BackgroundColor = Color.FromArgb("#555555"), TextColor = Colors.White
                 };
-                snooze.Clicked += (_, _) => SendAlarmAction(registration, AlarmPlaybackService.SnoozeAction);
+                snooze.Pressed += (_, _) => SendAlarmAction(registration, AlarmPlaybackService.SnoozeAction);
                 buttons.Add(snooze);
             }
             group.Add(buttons);
