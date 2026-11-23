@@ -9,13 +9,13 @@ public partial class MainPage : ContentPage
 {
     private readonly IDispatcherTimer _clockTimer;
     private readonly IDispatcherTimer _pixelShiftTimer;
-    private readonly IDispatcherTimer _skipTimer;
+    private readonly IDispatcherTimer _controlsTimer;
     private readonly IClockBrightness _brightness;
     private readonly AlarmCoordinator _alarms;
     private bool _skipBusy;
+    private bool _navigationBusy;
     private bool _clockActive;
     private int _nextAlarmVersion;
-    private int _touchVersion;
     private DateTimeOffset? _nextAlarm;
     private DateTimeOffset _nextAlarmRefreshAt;
     private int _pixelShiftPosition = -1;
@@ -40,10 +40,10 @@ public partial class MainPage : ContentPage
         _pixelShiftTimer.IsRepeating = false;
         _pixelShiftTimer.Tick += OnPixelShiftTimerTick;
 
-        _skipTimer = Dispatcher.CreateTimer();
-        _skipTimer.Interval = TimeSpan.FromSeconds(3);
-        _skipTimer.IsRepeating = false;
-        _skipTimer.Tick += (_, _) => HideSkipButton();
+        _controlsTimer = Dispatcher.CreateTimer();
+        _controlsTimer.Interval = TimeSpan.FromSeconds(3);
+        _controlsTimer.IsRepeating = false;
+        _controlsTimer.Tick += (_, _) => HideClockControls();
     }
 
     protected override void OnAppearing()
@@ -71,6 +71,7 @@ public partial class MainPage : ContentPage
         TimeLabel.TextColor = Color.FromArgb(timeColor);
         DateLabel.TextColor = Color.FromArgb(dateColor);
         DateLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowDateKey, true);
+        NextAlarmLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowNextAlarmKey, true);
         RefreshClock();
         RenderAlarmControls();
         _ = RefreshNextAlarmAsync();
@@ -86,7 +87,7 @@ public partial class MainPage : ContentPage
         _clockActive = false;
         _nextAlarmVersion++;
         AlarmPlaybackService.AlarmStateChanged -= OnAlarmStateChanged;
-        HideSkipButton();
+        HideClockControls();
         _clockTimer.Stop();
         _pixelShiftTimer.Stop();
         _pixelShiftVersion++;
@@ -156,18 +157,27 @@ public partial class MainPage : ContentPage
         }
     }
 
-    internal bool IsSkipButtonVisible => SkipButton.IsVisible;
+    internal bool AreClockControlsVisible => NavigationControls.IsVisible;
 
-    internal async void OnClockScreenTouched()
+    internal void OnClockScreenTouchStarted()
     {
-        if (_skipBusy || AlarmPlaybackService.IsAlarmProcessing) return;
-        var touch = ++_touchVersion;
-        if (!await RefreshNextAlarmAsync() || touch != _touchVersion ||
-            !_clockActive || _skipBusy || AlarmPlaybackService.IsAlarmProcessing || _nextAlarm is null)
-            return;
-        SkipButton.IsVisible = true;
-        _skipTimer.Stop();
-        _skipTimer.Start();
+        _controlsTimer.Stop();
+    }
+
+    internal void OnClockScreenTouchCancelled()
+    {
+        if (_clockActive && NavigationControls.IsVisible && !_navigationBusy)
+            _controlsTimer.Start();
+    }
+
+    internal void OnClockScreenTouched()
+    {
+        if (!_clockActive || _navigationBusy) return;
+        NavigationControls.IsVisible = true;
+        SkipButton.IsVisible = false;
+        _controlsTimer.Stop();
+        _controlsTimer.Start();
+        _ = RefreshNextAlarmAsync();
     }
 
     private void OnAlarmStateChanged() => Dispatcher.Dispatch(() =>
@@ -194,6 +204,8 @@ public partial class MainPage : ContentPage
                 var format = Preferences.Default.Get(ClockSettings.Use24HourTimeKey, true)
                     ? "dddd H:mm" : "dddd h:mm tt";
                 NextAlarmLabel.Text = $"Next alarm: {local.ToString(format, CultureInfo.CurrentCulture)}";
+                SkipButton.IsVisible = NavigationControls.IsVisible && !_skipBusy &&
+                    !AlarmPlaybackService.IsAlarmProcessing;
             }
             else
             {
@@ -271,14 +283,19 @@ public partial class MainPage : ContentPage
 
     private void HideSkipButton()
     {
-        _touchVersion++;
-        _skipTimer.Stop();
         SkipButton.IsVisible = false;
+    }
+
+    private void HideClockControls()
+    {
+        _controlsTimer.Stop();
+        NavigationControls.IsVisible = false;
+        HideSkipButton();
     }
 
     private async void OnSkipClicked(object? sender, EventArgs e)
     {
-        HideSkipButton();
+        HideClockControls();
         if (_skipBusy || AlarmPlaybackService.IsAlarmProcessing) return;
         _skipBusy = true;
         try
@@ -333,11 +350,14 @@ public partial class MainPage : ContentPage
     private void UpdateClockFontSize()
     {
         var padding = ClockSafeArea.Padding;
-        var dateHeight = DateLabel.IsVisible ? DateLabel.Height + ClockContent.Spacing : 0;
-        if (DateLabel.IsVisible && DateLabel.Height <= 0)
+        double? dateHeight = DateLabel.IsVisible ? DateLabel.Height : null;
+        double? alarmHeight = NextAlarmLabel.IsVisible ? NextAlarmLabel.Height : null;
+        if (DateLabel.IsVisible && DateLabel.Height <= 0 ||
+            NextAlarmLabel.IsVisible && NextAlarmLabel.Height <= 0)
             return;
         ClockTextSizer.Fit(TimeLabel, ClockSafeArea.Width - padding.Left - padding.Right,
-            ClockSafeArea.Height - padding.Top - padding.Bottom - dateHeight);
+            DisplayMath.AvailableTimeHeight(ClockSafeArea.Height - padding.Top - padding.Bottom,
+                ClockContent.Spacing, dateHeight, alarmHeight));
     }
 
     private async void OnPixelShiftTimerTick(object? sender, EventArgs e)
@@ -354,11 +374,29 @@ public partial class MainPage : ContentPage
 
     private async void OnSettingsClicked(object? sender, EventArgs e)
     {
-        await Shell.Current.GoToAsync(nameof(SettingsPage));
+        if (_navigationBusy) return;
+        _navigationBusy = true;
+        HideClockControls();
+        try
+        {
+            await Shell.Current.GoToAsync(nameof(SettingsPage));
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Error("BedsideAlarm", $"Could not open settings: {ex}");
+            await DisplayAlertAsync("Unable to open settings", ex.Message, "OK");
+        }
+        finally
+        {
+            _navigationBusy = false;
+        }
     }
 
     private async void OnAlarmsClicked(object? sender, EventArgs e)
     {
+        if (_navigationBusy) return;
+        _navigationBusy = true;
+        HideClockControls();
         var shell = Shell.Current;
         var alarmPage = new AlarmListPage();
         void OnNavigated(object? sender, ShellNavigatedEventArgs args)
@@ -374,10 +412,15 @@ public partial class MainPage : ContentPage
         {
             await Navigation.PushAsync(alarmPage);
         }
-        catch
+        catch (Exception ex)
         {
             shell.Navigated -= OnNavigated;
-            throw;
+            global::Android.Util.Log.Error("BedsideAlarm", $"Could not open alarms: {ex}");
+            await DisplayAlertAsync("Unable to open alarms", ex.Message, "OK");
+        }
+        finally
+        {
+            _navigationBusy = false;
         }
     }
 

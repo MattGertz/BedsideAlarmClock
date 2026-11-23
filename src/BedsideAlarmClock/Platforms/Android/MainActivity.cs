@@ -96,6 +96,7 @@ public class MainActivity : MauiAppCompatActivity
         switch (e.ActionMasked)
         {
             case MotionEventActions.Down:
+                clockPage.OnClockScreenTouchStarted();
                 _gestureTracking = true;
                 _adjustingBrightness = false;
                 _gestureStartX = e.GetX();
@@ -127,7 +128,7 @@ public class MainActivity : MauiAppCompatActivity
 
             case MotionEventActions.Up:
                 var consumed = _adjustingBrightness;
-                var skipWasVisible = clockPage.IsSkipButtonVisible;
+                var controlsWereVisible = clockPage.AreClockControlsVisible;
                 FinishBrightnessGesture();
                 if (consumed)
                 {
@@ -137,13 +138,14 @@ public class MainActivity : MauiAppCompatActivity
 
                 var handled = base.DispatchTouchEvent(e);
                 if (Shell.Current?.CurrentPage == clockPage &&
-                    !(skipWasVisible && !clockPage.IsSkipButtonVisible))
+                    !(controlsWereVisible && !clockPage.AreClockControlsVisible))
                     clockPage.OnClockScreenTouched();
                 return handled;
 
             case MotionEventActions.Cancel:
                 var canceled = _adjustingBrightness;
                 FinishBrightnessGesture();
+                clockPage.OnClockScreenTouchCancelled();
                 if (canceled) return true;
                 break;
 

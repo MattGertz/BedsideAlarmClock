@@ -19,5 +19,14 @@
             <Setter Property="TextColor" Value="#D8D8D8" />
             <Setter Property="TitleColor" Value="#858585" />
         </Style>
+        <Style x:Key="NextAlarmLabelStyle" TargetType="Label">
+            <Setter Property="TextColor" Value="#A0A0A0" />
+        </Style>
+        <Style x:Key="ClockNavigationButtonStyle" TargetType="ImageButton">
+            <Setter Property="BackgroundColor" Value="Transparent" />
+            <Setter Property="WidthRequest" Value="48" />
+            <Setter Property="HeightRequest" Value="48" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
     </Application.Resources>
 </Application>

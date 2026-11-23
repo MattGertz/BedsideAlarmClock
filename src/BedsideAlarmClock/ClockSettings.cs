@@ -5,6 +5,7 @@ internal static class ClockSettings
     public const string ShowSecondsKey = "clock.showSeconds";
     public const string Use24HourTimeKey = "clock.use24HourTime";
     public const string ShowDateKey = "clock.showDate";
+    public const string ShowNextAlarmKey = "clock.showNextAlarm";
     public const string ClockFontKey = "clock.font";
     public const string ClockColorKey = "clock.color";
 

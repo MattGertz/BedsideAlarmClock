@@ -15,8 +15,8 @@ Note that I will not be adding new features to this clock; I am not at all inter
 
 ## Features
 
-- Full-screen clock with configurable font and color, 12- or 24-hour time, optional
-  seconds and date, and portrait and landscape layouts.
+- Full-screen clock with configurable font and color, 12- or 24-hour time,
+  optional seconds, date and next alarm, and portrait and landscape layouts.
 - Swipe vertically to adjust the app's brightness without changing system
   brightness. The clock stays awake while its screen is active.
 - Smooth 750 ms pixel shifts follow two-minute stationary intervals and cycle
@@ -24,8 +24,9 @@ Note that I will not be adding new features to this clock; I am not at all inter
   overlapping glyphs vary with the font, size, and text; neither pixel
   relaxation time nor protection against OLED burn-in is guaranteed.
 - Multiple one-time and repeating alarms with selectable weekdays and labels.
-- Next-alarm display and a temporary **SKIP** button to skip the next
-  occurrence, cancel a one-time alarm, or cancel a pending snooze.
+- Tap the clock to briefly show alarm and settings icons, and a skip icon when
+  an alarm is upcoming. Skip cancels the next occurrence, a one-time
+  alarm, or a pending snooze.
 - Exact alarm delivery, configurable sound and volume, optional
   snooze, and on-screen and notification controls for active alarms.
 - Local storage for alarm definitions and preferences; no account or cloud

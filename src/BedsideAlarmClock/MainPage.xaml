@@ -6,7 +6,7 @@
              BackgroundColor="#000000">
     <Grid x:Name="ClockLayout"
           Padding="20"
-          RowDefinitions="*,Auto,Auto"
+          RowDefinitions="*,Auto"
           SizeChanged="OnClockLayoutSizeChanged">
         <Grid x:Name="ClockSafeArea"
               SizeChanged="OnClockSafeAreaSizeChanged">
@@ -28,20 +28,27 @@
                        TextColor="#858585"
                        SizeChanged="OnClockSafeAreaSizeChanged"
                        SemanticProperties.HeadingLevel="Level2" />
+                <Label x:Name="NextAlarmLabel"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       FontSize="13"
+                       Style="{StaticResource NextAlarmLabelStyle}"
+                       LineBreakMode="WordWrap"
+                       SizeChanged="OnClockSafeAreaSizeChanged"
+                       Text="Loading alarm..." />
             </VerticalStackLayout>
         </Grid>
 
-        <Button x:Name="SkipButton"
-                Grid.Row="0"
-                Text="SKIP"
-                FontSize="13"
-                BackgroundColor="#A62222"
-                TextColor="White"
-                HorizontalOptions="Start"
-                VerticalOptions="End"
-                IsVisible="False"
-                Clicked="OnSkipClicked"
-                SemanticProperties.Hint="Skip the next upcoming alarm" />
+        <ImageButton x:Name="SkipButton"
+                     Grid.Row="0"
+                     Source="skip_alarm.png"
+                     Style="{StaticResource ClockNavigationButtonStyle}"
+                     HorizontalOptions="Start"
+                     VerticalOptions="End"
+                     IsVisible="False"
+                     Clicked="OnSkipClicked"
+                     SemanticProperties.Description="Skip next alarm"
+                     SemanticProperties.Hint="Skip the next upcoming alarm" />
 
         <ScrollView x:Name="AlarmControls"
                     Grid.Row="1"
@@ -52,27 +59,21 @@
                                  Spacing="8" />
         </ScrollView>
 
-        <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
-            <Label x:Name="NextAlarmLabel"
-                   FontSize="13"
-                   TextColor="#A0A0A0"
-                   VerticalOptions="Center"
-                   LineBreakMode="WordWrap"
-                   Text="Loading alarm..." />
-            <HorizontalStackLayout Grid.Column="1">
-                <Button Text="Alarms"
-                        FontSize="13"
-                        TextColor="#A0A0A0"
-                        BackgroundColor="Transparent"
-                        Clicked="OnAlarmsClicked"
-                        SemanticProperties.Hint="Open alarm setup" />
-                <Button Text="Settings"
-                        FontSize="13"
-                        TextColor="#A0A0A0"
-                        BackgroundColor="Transparent"
-                        Clicked="OnSettingsClicked"
-                        SemanticProperties.Hint="Open clock settings" />
-            </HorizontalStackLayout>
-        </Grid>
+        <HorizontalStackLayout x:Name="NavigationControls"
+                               Grid.Row="0"
+                               HorizontalOptions="End"
+                               VerticalOptions="End"
+                               IsVisible="False">
+            <ImageButton Source="alarm_button.png"
+                         Style="{StaticResource ClockNavigationButtonStyle}"
+                         Clicked="OnAlarmsClicked"
+                         SemanticProperties.Description="Alarms"
+                         SemanticProperties.Hint="Open alarm setup" />
+            <ImageButton Source="settings_gear.png"
+                         Style="{StaticResource ClockNavigationButtonStyle}"
+                         Clicked="OnSettingsClicked"
+                         SemanticProperties.Description="Settings"
+                         SemanticProperties.Hint="Open clock settings" />
+        </HorizontalStackLayout>
     </Grid>
 </ContentPage>

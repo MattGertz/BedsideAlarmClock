@@ -15,6 +15,17 @@ public class DisplayMathTests
     }
 
     [Theory]
+    [InlineData(null, null, 300)]
+    [InlineData(30d, null, 258)]
+    [InlineData(null, 20d, 268)]
+    [InlineData(30d, 20d, 226)]
+    public void ClockHeightReservesSpaceOnlyForVisibleDetails(
+        double? dateHeight, double? alarmHeight, double expected)
+    {
+        Assert.Equal(expected, DisplayMath.AvailableTimeHeight(300, 12, dateHeight, alarmHeight));
+    }
+
+    [Theory]
     [InlineData(0.5f, -250f, 1000f, 0.7475f)]
     [InlineData(0.5f, 250f, 1000f, 0.2525f)]
     [InlineData(0.5f, -1000f, 1000f, 1f)]

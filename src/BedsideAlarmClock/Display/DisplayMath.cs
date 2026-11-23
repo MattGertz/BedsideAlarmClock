@@ -14,6 +14,13 @@ internal static class DisplayMath
         return currentSize * Math.Min(availableWidth / referenceWidth, availableHeight / referenceHeight);
     }
 
+    public static double AvailableTimeHeight(
+        double height, double spacing, double? dateHeight, double? nextAlarmHeight)
+    {
+        return height - (dateHeight is { } date ? date + spacing : 0)
+            - (nextAlarmHeight is { } alarm ? alarm + spacing : 0);
+    }
+
     public static float BrightnessAfterSwipe(float initialBrightness, float verticalDistance, float screenHeight)
     {
         return Math.Clamp(
