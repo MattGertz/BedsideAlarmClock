@@ -12,10 +12,15 @@ public partial class SettingsPage : ContentPage
         var savedFont = Preferences.Default.Get(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[0]);
         var fontIndex = Array.IndexOf(ClockSettings.ClockFonts, savedFont);
         ClockFontPicker.SelectedIndex = fontIndex >= 0 ? fontIndex : 0;
+        ClockColorPicker.ItemsSource = ClockSettings.ClockColors;
+        var savedColor = Preferences.Default.Get(ClockSettings.ClockColorKey, ClockSettings.ClockColors[0]);
+        var colorIndex = Array.IndexOf(ClockSettings.ClockColors, savedColor);
+        ClockColorPicker.SelectedIndex = colorIndex >= 0 ? colorIndex : 0;
         Use24HourTimeSwitch.Toggled += On24HourTimeToggled;
         ShowSecondsSwitch.Toggled += OnShowSecondsToggled;
         ShowDateSwitch.Toggled += OnShowDateToggled;
         ClockFontPicker.SelectedIndexChanged += OnClockFontChanged;
+        ClockColorPicker.SelectedIndexChanged += OnClockColorChanged;
     }
 
     protected override void OnAppearing()
@@ -74,6 +79,14 @@ public partial class SettingsPage : ContentPage
         if (ClockFontPicker.SelectedIndex >= 0)
         {
             Preferences.Default.Set(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[ClockFontPicker.SelectedIndex]);
+        }
+    }
+
+    private void OnClockColorChanged(object? sender, EventArgs e)
+    {
+        if (ClockColorPicker.SelectedIndex >= 0)
+        {
+            Preferences.Default.Set(ClockSettings.ClockColorKey, ClockSettings.ClockColors[ClockColorPicker.SelectedIndex]);
         }
     }
 }

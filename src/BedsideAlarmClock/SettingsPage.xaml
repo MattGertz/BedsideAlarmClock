@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BedsideAlarmClock.SettingsPage"
              Title="Settings"
-             BackgroundColor="#000000">
+             Style="{StaticResource SettingsPageStyle}">
     <ScrollView>
     <VerticalStackLayout Padding="24,16"
                          Spacing="20">
@@ -13,10 +13,10 @@
                                  VerticalOptions="Center">
                 <Label Text="24-hour time"
                        FontSize="18"
-                       TextColor="#D8D8D8" />
+                       Style="{StaticResource SettingsPrimaryLabelStyle}" />
                 <Label Text="Use a 24-hour clock instead of AM/PM"
                        FontSize="14"
-                       TextColor="#858585" />
+                       Style="{StaticResource SettingsSecondaryLabelStyle}" />
             </VerticalStackLayout>
             <Switch x:Name="Use24HourTimeSwitch"
                     Grid.Column="1"
@@ -30,10 +30,10 @@
                                  VerticalOptions="Center">
                 <Label Text="Show seconds"
                        FontSize="18"
-                       TextColor="#D8D8D8" />
+                       Style="{StaticResource SettingsPrimaryLabelStyle}" />
                 <Label Text="Update the clock every second"
                        FontSize="14"
-                       TextColor="#858585" />
+                       Style="{StaticResource SettingsSecondaryLabelStyle}" />
             </VerticalStackLayout>
             <Switch x:Name="ShowSecondsSwitch"
                     Grid.Column="1"
@@ -44,7 +44,7 @@
               ColumnSpacing="16">
             <Label Text="Show date"
                    FontSize="18"
-                   TextColor="#D8D8D8"
+                   Style="{StaticResource SettingsPrimaryLabelStyle}"
                    VerticalOptions="Center" />
             <Switch x:Name="ShowDateSwitch"
                     Grid.Column="1"
@@ -55,16 +55,24 @@
         <VerticalStackLayout Spacing="4">
             <Label Text="Clock font"
                    FontSize="18"
-                   TextColor="#D8D8D8" />
+                   Style="{StaticResource SettingsPrimaryLabelStyle}" />
             <Picker x:Name="ClockFontPicker"
                     Title="Select a clock font"
-                    TextColor="#D8D8D8"
-                    TitleColor="#858585"
+                    Style="{StaticResource SettingsPickerStyle}"
                     SemanticProperties.Description="Clock font" />
         </VerticalStackLayout>
+        <VerticalStackLayout Spacing="4">
+            <Label Text="Clock color"
+                   FontSize="18"
+                   Style="{StaticResource SettingsPrimaryLabelStyle}" />
+            <Picker x:Name="ClockColorPicker"
+                    Title="Select a clock color"
+                    Style="{StaticResource SettingsPickerStyle}"
+                    SemanticProperties.Description="Clock and date color" />
+        </VerticalStackLayout>
         <VerticalStackLayout Spacing="8">
-            <Label Text="Alarm permissions" FontSize="18" TextColor="#D8D8D8" />
-            <Label x:Name="AlarmPermissionStatus" FontSize="14" TextColor="#FFD180" />
+            <Label Text="Alarm permissions" FontSize="18" Style="{StaticResource SettingsPrimaryLabelStyle}" />
+            <Label x:Name="AlarmPermissionStatus" FontSize="14" Style="{StaticResource SettingsStatusLabelStyle}" />
             <Button Text="Notification settings" Clicked="OnNotificationSettingsClicked" />
             <Button Text="Exact alarm settings" Clicked="OnExactAlarmSettingsClicked" />
             <Button Text="Full-screen alarm settings" Clicked="OnFullScreenSettingsClicked" />

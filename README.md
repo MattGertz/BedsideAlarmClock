@@ -11,16 +11,18 @@ The most recent versions of Android rendered my old night-time alarm clock obsol
 
 This app is (mostly) a "vibed" app using GitHub Copilot, though all of the code has been reviewed by me and in some cases augmented by me.  There are many unit tests and static analysis has been run on it multiple times to check for failure modes.  It has been tested by me "in the wild" in a large number of situations, albeit only on a Samsung Galaxy 25 Ultra, and I use it myself daily.  Although this is a MAUI app and in theory supports multiple platforms, I have only created an Android output for it.  Creating a Windows output did not make a lot of sense to me, as there are no Windows OS phones anymore and a tablet would be overkill for this app, and I have neither facility nor need to test an Apple output of it.  Both of those iterations would need a lot of additional work, as alarms touch the core of an operating system and each of those OSs is wildly different from the others. The reader is welcome to fork the code and do those, of course.
 
-Note that I will not be adding new features to this clock; I am not at all interesting in adding alarm challenges or whatever.  I will be fixing bugs and updating it whenever new versions of Android require me to do so.  I will gratefully take bug reports and even more gratefully take bug fixes to the Android version as it stands.  Please note that standard Android emulators (the ones that come with the Android SDK) do not seem to work well for testing the project; mouse-clicks-as-finger-touches fail more often than they succeed.  This problem seems to be related to making it protected from screen locking, as it worked fine in emulation up to that point of the development.
+I am not interested in adding alarm challenges or similar features. I will gratefully take bug reports and even more gratefully take bug fixes to the Android version as it stands. Please note that standard Android emulators (the ones that come with the Android SDK) do not seem to work well for testing the project; mouse-clicks-as-finger-touches fail more often than they succeed. This problem seems to be related to making it protected from screen locking, as it worked fine in emulation up to that point of the development.
 
 ## Features
 
-- Full-screen clock with configurable font, 12- or 24-hour time, optional
+- Full-screen clock with configurable font and color, 12- or 24-hour time, optional
   seconds and date, and portrait and landscape layouts.
 - Swipe vertically to adjust the app's brightness without changing system
   brightness. The clock stays awake while its screen is active.
-- Periodic pixel shifting to reduce static display exposure; this does not
-  guarantee protection against OLED burn-in.
+- Smooth 750 ms pixel shifts follow two-minute stationary intervals and cycle
+  through four positions, reducing static display exposure. Stroke widths and
+  overlapping glyphs vary with the font, size, and text; neither pixel
+  relaxation time nor protection against OLED burn-in is guaranteed.
 - Multiple one-time and repeating alarms with selectable weekdays and labels.
 - Next-alarm display and a temporary **SKIP** button to skip the next
   occurrence, cancel a one-time alarm, or cancel a pending snooze.

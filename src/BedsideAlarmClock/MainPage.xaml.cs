@@ -18,7 +18,8 @@ public partial class MainPage : ContentPage
     private int _touchVersion;
     private DateTimeOffset? _nextAlarm;
     private DateTimeOffset _nextAlarmRefreshAt;
-    private int _pixelShiftPosition;
+    private int _pixelShiftPosition = -1;
+    private int _pixelShiftVersion;
     private string? _lastTimeText;
     private string? _lastDateText;
     private string? _lastTimeDescription;
@@ -36,7 +37,7 @@ public partial class MainPage : ContentPage
 
         _pixelShiftTimer = Dispatcher.CreateTimer();
         _pixelShiftTimer.Interval = TimeSpan.FromMinutes(2);
-        _pixelShiftTimer.IsRepeating = true;
+        _pixelShiftTimer.IsRepeating = false;
         _pixelShiftTimer.Tick += OnPixelShiftTimerTick;
 
         _skipTimer = Dispatcher.CreateTimer();
@@ -59,11 +60,16 @@ public partial class MainPage : ContentPage
 
     public void ResumeClock()
     {
+        var wasActive = _clockActive;
         _clockActive = true;
         AlarmPlaybackService.AlarmStateChanged -= OnAlarmStateChanged;
         AlarmPlaybackService.AlarmStateChanged += OnAlarmStateChanged;
         var font = Preferences.Default.Get(ClockSettings.ClockFontKey, ClockSettings.ClockFonts[0]);
         TimeLabel.FontFamily = ClockSettings.FontFamily(font);
+        var color = Preferences.Default.Get(ClockSettings.ClockColorKey, ClockSettings.ClockColors[0]);
+        var (timeColor, dateColor) = ClockSettings.ColorValues(color);
+        TimeLabel.TextColor = Color.FromArgb(timeColor);
+        DateLabel.TextColor = Color.FromArgb(dateColor);
         DateLabel.IsVisible = Preferences.Default.Get(ClockSettings.ShowDateKey, true);
         RefreshClock();
         RenderAlarmControls();
@@ -71,7 +77,8 @@ public partial class MainPage : ContentPage
         UpdateClockFontSize();
         _clockTimer.Start();
         _brightness.Activate();
-        _pixelShiftTimer.Start();
+        if (!wasActive)
+            _pixelShiftTimer.Start();
     }
 
     public void PauseClock()
@@ -82,7 +89,21 @@ public partial class MainPage : ContentPage
         HideSkipButton();
         _clockTimer.Stop();
         _pixelShiftTimer.Stop();
+        _pixelShiftVersion++;
+        SnapPixelShiftToPosition();
         _brightness.Deactivate();
+    }
+
+    private void SnapPixelShiftToPosition()
+    {
+        ClockContent.CancelAnimations();
+        if (_pixelShiftPosition >= 0)
+        {
+            var (x, y) = DisplayMath.PixelOffset(_pixelShiftPosition);
+            var density = DeviceDisplay.MainDisplayInfo.Density;
+            ClockContent.TranslationX = x / density;
+            ClockContent.TranslationY = y / density;
+        }
     }
 
     public void RefreshClock()
@@ -289,6 +310,13 @@ public partial class MainPage : ContentPage
     {
         var margin = DisplayMath.PixelShiftDistance / DeviceDisplay.MainDisplayInfo.Density;
         ClockSafeArea.Padding = new Thickness(margin);
+        SnapPixelShiftToPosition();
+        if (_clockActive)
+        {
+            _pixelShiftVersion++;
+            _pixelShiftTimer.Stop();
+            _pixelShiftTimer.Start();
+        }
         UpdateClockFontSize();
     }
 
@@ -312,13 +340,16 @@ public partial class MainPage : ContentPage
             ClockSafeArea.Height - padding.Top - padding.Bottom - dateHeight);
     }
 
-    private void OnPixelShiftTimerTick(object? sender, EventArgs e)
+    private async void OnPixelShiftTimerTick(object? sender, EventArgs e)
     {
-        _pixelShiftPosition = (_pixelShiftPosition + 1) % 9;
+        if (!_clockActive) return;
+        var version = _pixelShiftVersion;
+        _pixelShiftPosition = (_pixelShiftPosition + 1) % DisplayMath.PixelShiftPositionCount;
         var (x, y) = DisplayMath.PixelOffset(_pixelShiftPosition);
         var density = DeviceDisplay.MainDisplayInfo.Density;
-        ClockContent.TranslationX = x / density;
-        ClockContent.TranslationY = y / density;
+        var cancelled = await ClockContent.TranslateToAsync(x / density, y / density, 750, Easing.SinInOut);
+        if (!cancelled && _clockActive && version == _pixelShiftVersion)
+            _pixelShiftTimer.Start();
     }
 
     private async void OnSettingsClicked(object? sender, EventArgs e)

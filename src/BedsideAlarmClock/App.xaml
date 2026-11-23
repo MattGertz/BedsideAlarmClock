@@ -2,4 +2,22 @@
 <Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="BedsideAlarmClock.App">
+    <Application.Resources>
+        <Style x:Key="SettingsPageStyle" TargetType="ContentPage">
+            <Setter Property="BackgroundColor" Value="#000000" />
+        </Style>
+        <Style x:Key="SettingsPrimaryLabelStyle" TargetType="Label">
+            <Setter Property="TextColor" Value="#D8D8D8" />
+        </Style>
+        <Style x:Key="SettingsSecondaryLabelStyle" TargetType="Label">
+            <Setter Property="TextColor" Value="#858585" />
+        </Style>
+        <Style x:Key="SettingsStatusLabelStyle" TargetType="Label">
+            <Setter Property="TextColor" Value="#FFD180" />
+        </Style>
+        <Style x:Key="SettingsPickerStyle" TargetType="Picker">
+            <Setter Property="TextColor" Value="#D8D8D8" />
+            <Setter Property="TitleColor" Value="#858585" />
+        </Style>
+    </Application.Resources>
 </Application>

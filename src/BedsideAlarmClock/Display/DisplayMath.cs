@@ -6,6 +6,7 @@ internal static class DisplayMath
     public const float MaximumBrightness = 1f;
     public const float DefaultBrightness = 0.2f;
     public const int PixelShiftDistance = 48;
+    public const int PixelShiftPositionCount = 4;
 
     public static double FitFontSize(
         double currentSize, double referenceWidth, double referenceHeight, double availableWidth, double availableHeight)
@@ -23,17 +24,12 @@ internal static class DisplayMath
 
     public static (int X, int Y) PixelOffset(int position)
     {
-        return (position % 9) switch
+        return (position % PixelShiftPositionCount) switch
         {
-            0 => (0, 0),
-            1 => (PixelShiftDistance, 0),
-            2 => (PixelShiftDistance, PixelShiftDistance),
-            3 => (0, PixelShiftDistance),
-            4 => (-PixelShiftDistance, PixelShiftDistance),
-            5 => (-PixelShiftDistance, 0),
-            6 => (-PixelShiftDistance, -PixelShiftDistance),
-            7 => (0, -PixelShiftDistance),
-            _ => (PixelShiftDistance, -PixelShiftDistance)
+            0 => (PixelShiftDistance, -PixelShiftDistance),
+            1 => (PixelShiftDistance, PixelShiftDistance),
+            2 => (-PixelShiftDistance, PixelShiftDistance),
+            _ => (-PixelShiftDistance, -PixelShiftDistance)
         };
     }
 }

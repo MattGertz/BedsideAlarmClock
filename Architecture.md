@@ -116,7 +116,7 @@ The specification does not define the edge-case policy for daylight-saving trans
 
 Adjust brightness through the current Android window rather than global system brightness, avoiding `WRITE_SETTINGS`. Keep the preferred value in local settings. If hardware minimum brightness is insufficient, investigate a translucent black overlay without accessibility permissions.
 
-Keep all clock content inside one translated group for pixel shifting. MAUI layout coordinates are density-scaled; verify that an Android implementation moves actual physical pixels and stays within safe display bounds on the S25 Ultra. Small deterministic, instantaneous offsets should run independently of clock refreshes. Pixel shifting reduces static exposure but cannot guarantee burn-in prevention.
+Keep the time and date inside one translated group for pixel shifting. MAUI layout coordinates are density-scaled; verify that the Android implementation moves actual physical pixels and stays within safe display bounds on the S25 Ultra. Deterministic, smooth offsets run independently of clock refreshes. Pixel shifting reduces static exposure but cannot guarantee burn-in prevention.
 
 ## Reliability risks and mitigations
 
@@ -172,7 +172,8 @@ Phase 1 will target `net10.0-android` only. Windows compilation is intentionally
 ## Phase 2 display status
 
 - Brightness is adjusted by vertical swipe using the current Android window and a fixed range. The user verified the range, both swipe directions and orientations, and persistence across sessions on the S25 Ultra.
-- The clock and date move together in a deterministic sequence every two minutes. The shift is 48 physical pixels from center in each direction, per user preference; 48 pixels of travel space are reserved around the content. The user verified shifting with a temporary 15-second interval on the S25 Ultra, and the interval was restored to two minutes.
+- After two minutes stationary, the clock and date move together over 750 ms, cycling through four corners at 48 physical pixels from center. Adjacent corners are 96 physical pixels apart, and 48 pixels of travel space are reserved around the content. The earlier instantaneous shifting implementation was verified on the S25 Ultra; the smooth transitions and updated sequence still require device verification.
+- Font stroke width has no single reliable Android font metric: it depends on glyph, direction, size, antialiasing, and the actual typeface. Android can rasterize rendered glyphs for analysis, but checking a stroke width alone does not establish a per-pixel relaxation guarantee because other strokes or changing text may overlap. The app does not dynamically measure strokes, and the fixed shift cannot guarantee two minutes of relaxation in every eight.
 - The clock's serif and monospace options use bundled Noto Serif and Noto Sans Mono fonts to avoid device-specific system font mappings. The fonts are distributed under the SIL Open Font License, included alongside the font files.
 - Pixel shifting reduces static exposure but cannot guarantee prevention of OLED burn-in. No additional dimming overlay is implemented.
 - The user verified that brightness returns to normal outside the clock and that the minimum is satisfactory in a dark room.

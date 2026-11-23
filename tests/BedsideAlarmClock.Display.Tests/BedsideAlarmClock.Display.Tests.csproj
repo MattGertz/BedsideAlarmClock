@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\BedsideAlarmClock\Display\DisplayMath.cs" Link="DisplayMath.cs" />
+    <Compile Include="..\..\src\BedsideAlarmClock\ClockSettings.cs" Link="ClockSettings.cs" />
     <Using Include="Xunit" />
   </ItemGroup>
 

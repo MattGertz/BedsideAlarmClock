@@ -27,18 +27,29 @@ public class DisplayMathTests
     }
 
     [Fact]
-    public void PixelShiftCyclesThroughBoundedPhysicalOffsets()
+    public void PixelShiftCyclesThroughCornersWithMaximumTravel()
     {
         var expected = new (int X, int Y)[]
         {
-            (0, 0), (48, 0), (48, 48), (0, 48), (-48, 48),
-            (-48, 0), (-48, -48), (0, -48), (48, -48)
+            (48, -48), (48, 48), (-48, 48), (-48, -48)
         };
 
         for (var i = 0; i < expected.Length; i++)
         {
             Assert.Equal(expected[i], DisplayMath.PixelOffset(i));
             Assert.Equal(expected[i], DisplayMath.PixelOffset(i + expected.Length));
+            var next = DisplayMath.PixelOffset(i + 1);
+            Assert.Equal(2 * DisplayMath.PixelShiftDistance,
+                Math.Abs(next.X - expected[i].X) + Math.Abs(next.Y - expected[i].Y));
         }
+    }
+
+    [Fact]
+    public void ClockColorsAreDistinctAndUnknownColorsUseDefault()
+    {
+        var colors = ClockSettings.ClockColors.Select(ClockSettings.ColorValues).ToArray();
+        Assert.Equal(colors.Length, colors.Distinct().Count());
+        Assert.Equal(ClockSettings.ColorValues("Grey"), ClockSettings.ColorValues("unknown"));
+        Assert.Equal(ClockSettings.ColorValues("Grey"), ClockSettings.ColorValues("Gray"));
     }
 }
