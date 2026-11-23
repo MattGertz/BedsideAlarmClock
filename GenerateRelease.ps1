@@ -3,6 +3,7 @@ $projectDirectory = Join-Path $PSScriptRoot 'src\BedsideAlarmClock'
 
 $env:ANDROID_KEYSTORE_PASSWORD = Read-Host "Keystore password"
 $env:ANDROID_KEY_PASSWORD = Read-Host "Key password"
+$env:ANDROID_RELEASE_DESTINATION = Read-Host "Release copy destination"
 
 foreach ($directory in @('bin\Release', 'obj\Release')) {
     $path = Join-Path $projectDirectory $directory
@@ -17,4 +18,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $apk = Join-Path $projectDirectory 'bin\Release\net10.0-android\android-arm64\publish\com.matthew.bedsidealarmclock-Signed.apk'
-Copy-Item -LiteralPath $apk -Destination "M:\OneDrive\Matt's Bedside Alarm Clock" -Force
+Copy-Item -LiteralPath $apk -Destination $env:ANDROID_RELEASE_DESTINATION -Force

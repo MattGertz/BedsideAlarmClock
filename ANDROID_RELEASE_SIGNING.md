@@ -37,6 +37,13 @@ dotnet publish src\BedsideAlarmClock\BedsideAlarmClock.csproj -f net10.0-android
 
 Output: `src\BedsideAlarmClock\bin\Release\net10.0-android\android-arm64\publish\com.matthew.bedsidealarmclock-Signed.apk`
 
+For the owner's final release workflow, run `.\GenerateRelease.ps1` from the
+repository root. It prompts for the signing passwords and copy destination,
+removes the project's Release build outputs, publishes an ARM64 APK, and
+copies it to the chosen destination. The prompts display the passwords as they
+are entered, and the environment variables remain set in the PowerShell session
+afterward.
+
 ## Verify
 
 ```powershell
